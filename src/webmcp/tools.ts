@@ -251,19 +251,17 @@ async function readDashboardState(): Promise<WebMCPToolResult> {
 // ── Register WebMCP Tools ───────────────────────────────────────────────────
 
 export function registerWebMCPTools(): void {
-  // Dev-only hooks for testing in browser console
-  if (import.meta.env.DEV) {
-    window.__chipWebMCP = {
-      listDevices,
-      getBoardStatus,
-      readSerialLogs,
-      readJobStatus,
-      readDashboardState,
-    }
-    console.log(
-      '[WebMCP] Dev test hooks registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.readSerialLogs()',
-    )
+  // Always register browser console hooks for WebMCP tool testing (dev + prod)
+  window.__chipWebMCP = {
+    listDevices,
+    getBoardStatus,
+    readSerialLogs,
+    readJobStatus,
+    readDashboardState,
   }
+  console.log(
+    '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.readSerialLogs()',
+  )
 
   const modelContext = document.modelContext
   if (!modelContext) {
