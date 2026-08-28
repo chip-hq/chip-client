@@ -49,5 +49,6 @@ Inspect hardware state and assist me in this dashboard only through the page-exp
 - get_board_status: Get hardware connection, baud rate & gateway status
 - read_serial_logs: Read live real-time serial terminal output
 - read_job_status: Check compilation & flash pipeline progress
-- read_dashboard_state: Full snapshot of dashboard & visualizer state`
+- read_dashboard_state: Full snapshot of dashboard & visualizer state
+- post_agent_message: Post status updates or advice directly to the user's dashboard Live Digest sidebar`
 }

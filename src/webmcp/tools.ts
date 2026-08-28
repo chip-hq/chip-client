@@ -55,15 +55,41 @@ export function setDashboardSnapshotProvider(next: () => DashboardSnapshot): voi
   snapshotProvider = next
 }
 
-// ── WebMCP Tool Implementations ──────────────────────────────────────────────
+async function getLiveDevices(): Promise<ChipDevice[]> {
+  const snapshot = snapshotProvider()
+  if (snapshot.devices.length > 0) return snapshot.devices
+
+  // Fallback: Query live cloud gateway for devices registered in this user/backend session
+  try {
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'https://chip-backend-production-fe14.up.railway.app').replace(/\/+$/, '')
+    const res = await fetch(`${backendUrl}/api/devices`)
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data.devices) && data.devices.length > 0) {
+        return data.devices.map((d: Record<string, unknown>) => ({
+          deviceId: String(d.deviceId || 'default_device'),
+          chip: String(d.chip || 'ESP32-D0WD-V3'),
+          connected: Boolean(d.connected),
+          status: d.connected ? 'connected' : 'idle',
+          baud: 115200,
+          transport: 'web-serial' as const,
+        }))
+      }
+    }
+  } catch (err) {
+    console.warn('[WebMCP] Backend devices fallback fetch error:', err)
+  }
+
+  return []
+}
 
 async function listDevices(): Promise<WebMCPToolResult> {
-  const snapshot = snapshotProvider()
+  const devices = await getLiveDevices()
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify({ devices: snapshot.devices, count: snapshot.devices.length }, null, 2),
+        text: JSON.stringify({ devices, count: devices.length }, null, 2),
       },
     ],
   }
@@ -71,7 +97,9 @@ async function listDevices(): Promise<WebMCPToolResult> {
 
 async function getBoardStatus(): Promise<WebMCPToolResult> {
   const snapshot = snapshotProvider()
-  const primary = snapshot.devices[0] || null
+  const devices = await getLiveDevices()
+  const primary = devices[0] || null
+
   return {
     content: [
       {
@@ -81,7 +109,7 @@ async function getBoardStatus(): Promise<WebMCPToolResult> {
             boardConnected: !!(primary && primary.connected),
             device: primary,
             baudRate: primary ? primary.baud : 115200,
-            cloudGatewayConnected: snapshot.cloudConnected,
+            cloudGatewayConnected: snapshot.cloudConnected || !!(primary && primary.connected),
             agentOAuthConnected: snapshot.agentConnected,
             roomKey: snapshot.roomKey,
           },
