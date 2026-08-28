@@ -282,7 +282,7 @@ export function dispatchAgentMessage(text: string): void {
   window.dispatchEvent(new CustomEvent('chip:agent-message', { detail: { text } }))
 }
 
-async function postAgentMessage(args: { message?: string }): Promise<WebMCPToolResult> {
+async function postAgentMessage(args?: { message?: string }): Promise<WebMCPToolResult> {
   const text = (args?.message ?? '').trim()
   if (!text) return { content: [{ type: 'text', text: 'Error: message field is required.' }] }
   dispatchAgentMessage(text)
