@@ -19,7 +19,7 @@ import { CompanionPreview } from './components/CompanionPreview'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
-import { setDashboardSnapshotProvider } from './webmcp/tools'
+import { setDashboardActionProvider, setDashboardSnapshotProvider } from './webmcp/tools'
 import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
 import './App.css'
@@ -1109,6 +1109,12 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     }
   }, [pushLine, showAlert])
 
+  useEffect(() => {
+    setDashboardActionProvider({
+      eraseBoard: eraseChip,
+    })
+  }, [eraseChip])
+
   const onPickFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
@@ -1493,10 +1499,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                       <div className="pb-5 min-w-0">
                         <p className="text-[13px] font-semibold text-black leading-tight mb-1">Exposed Page Tools (Read-Only)</p>
                         <p className="text-[12px] text-[#666666] leading-relaxed">
-                          WebMCP exposes live in-browser tools to the connected agent. Agents can read board state, post status updates, save guidance notes, and request hardware actions such as connect board, press reset, select file, or erase board.
+                          WebMCP exposes live in-browser tools to the connected agent. Agents can read board state, post status updates, save guidance notes, request hardware actions, and erase the connected board when you explicitly ask.
                         </p>
                         <div className="flex flex-wrap gap-1.5 mt-2.5">
-                          {['list_devices', 'get_board_status', 'read_serial_logs', 'read_job_status', 'read_dashboard_state', 'post_agent_message', 'set_agent_note', 'request_user_action'].map((tool) => (
+                          {['list_devices', 'get_board_status', 'read_serial_logs', 'read_job_status', 'read_dashboard_state', 'post_agent_message', 'set_agent_note', 'request_user_action', 'erase_board'].map((tool) => (
                             <span key={tool} className="inline-flex items-center px-2 py-0.5 text-[11px] font-mono font-medium bg-white border border-[#e5e5e5] rounded text-[#444444]">
                               {tool}
                             </span>

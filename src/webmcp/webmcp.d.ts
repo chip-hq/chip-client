@@ -60,5 +60,6 @@ interface Window {
     postAgentMessage: (args?: { message?: string }) => Promise<WebMCPToolResult>
     setAgentNote: (args?: { note?: string }) => Promise<WebMCPToolResult>
     requestUserAction: (args?: { action?: string; reason?: string; details?: string }) => Promise<WebMCPToolResult>
+    eraseBoard: () => Promise<WebMCPToolResult>
   }
 }

@@ -44,6 +44,10 @@ let snapshotProvider: () => DashboardSnapshot = () => ({
   agentNote: null,
 })
 
+let actionProvider: {
+  eraseBoard?: () => Promise<void>
+} = {}
+
 export function setDeviceProvider(next: () => ChipDevice[]): void {
   // Legacy adapter for backward compatibility if only array passed
   const currentProvider = snapshotProvider
@@ -55,6 +59,10 @@ export function setDeviceProvider(next: () => ChipDevice[]): void {
 
 export function setDashboardSnapshotProvider(next: () => DashboardSnapshot): void {
   snapshotProvider = next
+}
+
+export function setDashboardActionProvider(next: typeof actionProvider): void {
+  actionProvider = next
 }
 
 async function getLiveDevices(): Promise<ChipDevice[]> {
@@ -409,6 +417,40 @@ async function requestUserAction(args?: {
   }
 }
 
+async function eraseBoard(): Promise<WebMCPToolResult> {
+  const snapshot = snapshotProvider()
+  const boardConnected = snapshot.devices.some((d) => d.connected)
+
+  if (!boardConnected || !actionProvider.eraseBoard) {
+    dispatchUserActionRequest({
+      action: 'connect_board',
+      reason: 'The agent tried to erase the board, but no Web Serial board is currently connected in this browser.',
+      details: 'Connect the ESP32 in the CHIP dashboard first, then ask the agent to erase again.',
+    })
+    return {
+      content: [
+        {
+          type: 'text',
+          text: 'Error: no connected board is available to erase in this browser session.',
+        },
+      ],
+    }
+  }
+
+  dispatchAgentMessage('Starting board erase from WebMCP...')
+  await actionProvider.eraseBoard()
+  dispatchAgentNote('Board erase was triggered from WebMCP. The dashboard flash log contains the erase result.')
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: 'Erase command sent to the connected board. Check the CHIP dashboard log for progress and completion.',
+      },
+    ],
+  }
+}
+
 export function registerWebMCPTools(): void {
   // Always register browser console hooks for WebMCP tool testing (dev + prod)
   window.__chipWebMCP = {
@@ -420,6 +462,7 @@ export function registerWebMCPTools(): void {
     postAgentMessage,
     setAgentNote,
     requestUserAction,
+    eraseBoard,
   }
   console.log(
     '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.postAgentMessage({ message: "Hello!" })',
@@ -518,6 +561,13 @@ export function registerWebMCPTools(): void {
       },
       annotations: { title: 'Request user hardware action', readOnlyHint: false },
       execute: (args) => requestUserAction(args as { action?: string; reason?: string; details?: string }),
+    },
+    {
+      name: 'erase_board',
+      description: 'Erase the entire flash memory of the connected ESP32 board through the CHIP Web Serial session. This is destructive and should only be called after the user clearly asks to erase.',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { title: 'Erase connected ESP32 board', readOnlyHint: false },
+      execute: eraseBoard,
     },
   ]
 

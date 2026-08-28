@@ -202,11 +202,11 @@ export function DashAssist({
           {/* WebMCP Exposed Tools Footer */}
           <div className="pt-3 border-t border-[#f0f0f0]">
             <div className="text-[10px] uppercase font-semibold text-[#888] tracking-wider mb-1.5 flex items-center justify-between">
-              <span>WebMCP Browser Tools (8)</span>
+              <span>WebMCP Browser Tools (9)</span>
               <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">Active in Page</span>
             </div>
             <div className="flex flex-wrap gap-1">
-              {['list_devices', 'get_board_status', 'read_serial_logs', 'read_job_status', 'read_dashboard_state', 'post_agent_message', 'set_agent_note', 'request_user_action'].map((toolName) => (
+              {['list_devices', 'get_board_status', 'read_serial_logs', 'read_job_status', 'read_dashboard_state', 'post_agent_message', 'set_agent_note', 'request_user_action', 'erase_board'].map((toolName) => (
                 <span
                   key={toolName}
                   className="text-[10px] font-mono bg-[#f4f4f5] hover:bg-[#e4e4e7] text-[#333] px-2 py-0.5 rounded transition-colors cursor-default border border-[#e4e4e7]"
