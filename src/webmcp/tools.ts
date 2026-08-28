@@ -28,6 +28,7 @@ export interface DashboardSnapshot {
   userEmail: string | null
   companionEnabled: boolean
   roomKey: string
+  agentNote: string | null
 }
 
 // Live provider injected by the app so `execute` reflects fresh state at call time.
@@ -40,6 +41,7 @@ let snapshotProvider: () => DashboardSnapshot = () => ({
   userEmail: null,
   companionEnabled: true,
   roomKey: 'chip-default-room',
+  agentNote: null,
 })
 
 export function setDeviceProvider(next: () => ChipDevice[]): void {
@@ -53,19 +55,6 @@ export function setDeviceProvider(next: () => ChipDevice[]): void {
 
 export function setDashboardSnapshotProvider(next: () => DashboardSnapshot): void {
   snapshotProvider = next
-}
-
-export type ConnectResult = { ok: boolean; chip?: string; error?: string }
-
-let connectHandler: ((baud?: number) => Promise<ConnectResult>) | null = null
-let disconnectHandler: (() => Promise<void>) | null = null
-
-export function setHardwareActionHandlers(handlers: {
-  connect: (baud?: number) => Promise<ConnectResult>
-  disconnect: () => Promise<void>
-}): void {
-  connectHandler = handlers.connect
-  disconnectHandler = handlers.disconnect
 }
 
 async function getLiveDevices(): Promise<ChipDevice[]> {
@@ -125,6 +114,7 @@ async function getBoardStatus(): Promise<WebMCPToolResult> {
             cloudGatewayConnected: snapshot.cloudConnected || !!(primary && primary.connected),
             agentOAuthConnected: snapshot.agentConnected,
             roomKey: snapshot.roomKey,
+            agentNote: snapshot.agentNote,
           },
           null,
           2,
@@ -278,6 +268,7 @@ async function readDashboardState(): Promise<WebMCPToolResult> {
             agentOAuthConnected: snapshot.agentConnected,
             activeJobInProgress: !!snapshot.activeJob,
             webCompanionEnabled: snapshot.companionEnabled,
+            agentNote: snapshot.agentNote,
             totalSerialLogs: snapshot.serialLogs.length,
             cleanSerialSummary: cleanSummary,
           },
@@ -314,6 +305,52 @@ export function dispatchAgentMessage(text: string): void {
   }
 }
 
+export function dispatchAgentNote(note: string): void {
+  window.dispatchEvent(new CustomEvent('chip:agent-note', { detail: { note } }))
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('chip_agent_channel')
+      bc.postMessage({ type: 'chip:agent-note', note })
+      bc.close()
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    localStorage.setItem('chip_agent_note', JSON.stringify({ note, time: Date.now() }))
+  } catch {
+    // ignore
+  }
+}
+
+export interface AgentActionRequest {
+  action: 'connect_board' | 'press_reset' | 'select_file' | 'erase_board' | 'open_serial_monitor' | 'check_wiring'
+  reason: string
+  details?: string
+}
+
+export function dispatchUserActionRequest(request: AgentActionRequest): void {
+  window.dispatchEvent(new CustomEvent('chip:user-action-request', { detail: request }))
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('chip_agent_channel')
+      bc.postMessage({ type: 'chip:user-action-request', request })
+      bc.close()
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    localStorage.setItem('chip_user_action_request', JSON.stringify({ request, time: Date.now() }))
+  } catch {
+    // ignore
+  }
+}
+
 async function postAgentMessage(args?: { message?: string }): Promise<WebMCPToolResult> {
   const text = (args?.message ?? '').trim()
   if (!text) return { content: [{ type: 'text', text: 'Error: message field is required.' }] }
@@ -321,83 +358,54 @@ async function postAgentMessage(args?: { message?: string }): Promise<WebMCPTool
   return { content: [{ type: 'text', text: `Message delivered to dashboard: "${text}"` }] }
 }
 
-async function connectBoard(args?: { baud?: number }): Promise<WebMCPToolResult> {
-  const targetBaud = args?.baud || 115200
-
-  // 1. Broadcast command to the active user dashboard tab on this computer
-  try {
-    if (typeof BroadcastChannel !== 'undefined') {
-      const bc = new BroadcastChannel('chip_agent_channel')
-      bc.postMessage({ type: 'chip:command_connect', baud: targetBaud })
-      bc.close()
-    }
-  } catch {
-    // ignore
-  }
-
-  try {
-    localStorage.setItem('chip_command_connect', JSON.stringify({ baud: targetBaud, time: Date.now() }))
-  } catch {
-    // ignore
-  }
-
-  // 2. If running directly in the tab with active hardware handler:
-  if (connectHandler) {
-    try {
-      const result = await connectHandler(targetBaud)
-      if (result.ok) {
-        dispatchAgentMessage(`✦ Successfully connected to ${result.chip || 'ESP32'} via WebMCP`)
-        return {
-          content: [{ type: 'text', text: `Connected successfully to ${result.chip || 'ESP32'} hardware at ${targetBaud} baud.` }],
-        }
-      } else {
-        return {
-          content: [{ type: 'text', text: `Connection status: ${result.error || 'Opening port on user dashboard...'}` }],
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  dispatchAgentMessage(`✦ Agent triggered USB connection at ${targetBaud} baud`)
-  return {
-    content: [{ type: 'text', text: `Connecting to ESP32 board at ${targetBaud} baud on your dashboard.` }],
-  }
+async function setAgentNote(args?: { note?: string }): Promise<WebMCPToolResult> {
+  const note = (args?.note ?? '').trim()
+  if (!note) return { content: [{ type: 'text', text: 'Error: note field is required.' }] }
+  dispatchAgentNote(note)
+  return { content: [{ type: 'text', text: `Agent note saved for this dashboard: "${note}"` }] }
 }
 
-async function disconnectBoard(): Promise<WebMCPToolResult> {
-  try {
-    if (typeof BroadcastChannel !== 'undefined') {
-      const bc = new BroadcastChannel('chip_agent_channel')
-      bc.postMessage({ type: 'chip:command_disconnect' })
-      bc.close()
-    }
-  } catch {
-    // ignore
-  }
-
-  try {
-    localStorage.setItem('chip_command_disconnect', JSON.stringify({ time: Date.now() }))
-  } catch {
-    // ignore
-  }
-
-  if (disconnectHandler) {
-    try {
-      await disconnectHandler()
-      dispatchAgentMessage('✦ Disconnected hardware via WebMCP')
-      return {
-        content: [{ type: 'text', text: 'Board disconnected successfully.' }],
-      }
-    } catch {
-      // ignore
+async function requestUserAction(args?: {
+  action?: string
+  reason?: string
+  details?: string
+}): Promise<WebMCPToolResult> {
+  const allowedActions: AgentActionRequest['action'][] = [
+    'connect_board',
+    'press_reset',
+    'select_file',
+    'erase_board',
+    'open_serial_monitor',
+    'check_wiring',
+  ]
+  const action = args?.action
+  if (!action || !allowedActions.includes(action as AgentActionRequest['action'])) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error: action must be one of ${allowedActions.join(', ')}.`,
+        },
+      ],
     }
   }
 
-  dispatchAgentMessage('✦ Disconnect signal sent to dashboard')
+  const reason = (args?.reason ?? '').trim()
+  if (!reason) return { content: [{ type: 'text', text: 'Error: reason field is required.' }] }
+
+  const request: AgentActionRequest = {
+    action: action as AgentActionRequest['action'],
+    reason,
+    details: args?.details?.trim() || undefined,
+  }
+  dispatchUserActionRequest(request)
   return {
-    content: [{ type: 'text', text: 'Board disconnected.' }],
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ delivered: true, request }, null, 2),
+      },
+    ],
   }
 }
 
@@ -410,11 +418,11 @@ export function registerWebMCPTools(): void {
     readJobStatus,
     readDashboardState,
     postAgentMessage,
-    connectBoard,
-    disconnectBoard,
+    setAgentNote,
+    requestUserAction,
   }
   console.log(
-    '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.connectBoard()',
+    '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.postAgentMessage({ message: "Hello!" })',
   )
 
   const modelContext = document.modelContext
@@ -480,23 +488,36 @@ export function registerWebMCPTools(): void {
       execute: (args) => postAgentMessage(args as { message?: string }),
     },
     {
-      name: 'connect_board',
-      description: 'Automatically connect to the plugged-in ESP32 microcontroller over USB Web Serial without requiring manual user clicks. Detects chip model, baud rate, and starts serial streaming.',
+      name: 'set_agent_note',
+      description: 'Store concise guidance from the agent in the CHIP dashboard so the user and future agent calls can see the current recommendation.',
       inputSchema: {
         type: 'object',
         properties: {
-          baud: { type: 'number', description: 'Baud rate to connect with (default: 115200).' },
+          note: { type: 'string', description: 'Persistent guidance or next-step note for the dashboard.' },
         },
+        required: ['note'],
       },
-      annotations: { title: 'Connect to ESP32 hardware', readOnlyHint: false },
-      execute: (args) => connectBoard(args as { baud?: number }),
+      annotations: { title: 'Set agent guidance note', readOnlyHint: false },
+      execute: (args) => setAgentNote(args as { note?: string }),
     },
     {
-      name: 'disconnect_board',
-      description: 'Safely disconnect and release the USB Web Serial port for the connected ESP32 board.',
-      inputSchema: { type: 'object', properties: {} },
-      annotations: { title: 'Disconnect ESP32 hardware', readOnlyHint: false },
-      execute: disconnectBoard,
+      name: 'request_user_action',
+      description: 'Post a structured hardware action request into the dashboard, such as asking the user to connect the board, press reset, select a firmware file, or confirm that an erase is needed.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['connect_board', 'press_reset', 'select_file', 'erase_board', 'open_serial_monitor', 'check_wiring'],
+            description: 'The requested user-visible action.',
+          },
+          reason: { type: 'string', description: 'Why this action is needed now.' },
+          details: { type: 'string', description: 'Optional extra instructions for the dashboard.' },
+        },
+        required: ['action', 'reason'],
+      },
+      annotations: { title: 'Request user hardware action', readOnlyHint: false },
+      execute: (args) => requestUserAction(args as { action?: string; reason?: string; details?: string }),
     },
   ]
 
@@ -507,4 +528,3 @@ export function registerWebMCPTools(): void {
       .catch((err: unknown) => console.warn(`[WebMCP] Failed to register ${t.name}:`, err))
   })
 }
-

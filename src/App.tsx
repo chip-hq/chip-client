@@ -19,7 +19,7 @@ import { CompanionPreview } from './components/CompanionPreview'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
-import { setDashboardSnapshotProvider, setHardwareActionHandlers } from './webmcp/tools'
+import { setDashboardSnapshotProvider } from './webmcp/tools'
 import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
 import './App.css'
@@ -573,6 +573,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
   // Active job tracking for compile & flash phases
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null)
+  const [agentNote, setAgentNote] = useState<string | null>(null)
 
   const transportRef = useRef<Transport | null>(null)
   const loaderRef = useRef<ESPLoader | null>(null)
@@ -606,8 +607,19 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       userEmail: email || null,
       companionEnabled,
       roomKey,
+      agentNote,
     }))
-  }, [chip, status, connected, baud, log, activeJob, cloudConnected, agentConnected, email, companionEnabled, roomKey])
+  }, [chip, status, connected, baud, log, activeJob, cloudConnected, agentConnected, email, companionEnabled, roomKey, agentNote])
+
+  useEffect(() => {
+    const handleAgentNote = (event: Event) => {
+      const note = (event as CustomEvent<{ note: string }>).detail?.note
+      if (note) setAgentNote(note)
+    }
+
+    window.addEventListener('chip:agent-note', handleAgentNote)
+    return () => window.removeEventListener('chip:agent-note', handleAgentNote)
+  }, [])
 
   const uiBufferRef = useRef<string[]>([])
   const isCapturingUiRef = useRef<boolean>(false)
@@ -993,7 +1005,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
           })
         )
       }
-      return { ok: true, chip: detected }
     } catch (e) {
       const msg = errMessage(e)
       if (/No port selected|cancel/i.test(msg)) {
@@ -1004,68 +1015,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         setStatus('idle')
       }
       await teardown()
-      return { ok: false, error: msg }
-    }
-  }, [baud, pushLine, teardown, terminal, uid, email, showAlert])
-
-  const connectExistingOrPrompt = useCallback(async (targetBaud?: number): Promise<{ ok: boolean; chip?: string; error?: string }> => {
-    if (!WEB_SERIAL_OK) return { ok: false, error: 'Web Serial not supported in this browser' }
-    const useBaud = targetBaud || baud
-    setStatus('connecting')
-    pushLine('Auto-connecting Web Serial port…')
-
-    try {
-      let port: SerialPort | null = null
-      const ports = await navigator.serial.getPorts()
-      if (ports.length > 0) {
-        port = ports[0]
-      } else {
-        port = await navigator.serial.requestPort({})
-      }
-
-      const transport = new Transport(port)
-      transportRef.current = transport
-
-      const loader = new ESPLoader({
-        transport,
-        baudrate: useBaud,
-        terminal,
-      })
-
-      pushLine('Syncing with ESP32…')
-      const detected = await loader.main()
-      loaderRef.current = loader
-
-      setChip(detected)
-      setStatus('connected')
-      pushLine(`Connected: ${detected}`)
-      showAlert('success', `ESP32 connected successfully (${detected})`, 'Board Connected')
-
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'register',
-            deviceId: 'default_device',
-            chip: detected,
-            connected: true,
-            userId: uid,
-            uid,
-            email,
-          })
-        )
-      }
-      return { ok: true, chip: detected }
-    } catch (e) {
-      const msg = errMessage(e)
-      if (/No port selected|cancel/i.test(msg)) {
-        setStatus('idle')
-      } else {
-        showAlert('error', msg, 'Connection Failed')
-        pushLine(`Error: ${msg}`)
-        setStatus('idle')
-      }
-      await teardown()
-      return { ok: false, error: msg }
     }
   }, [baud, pushLine, teardown, terminal, uid, email, showAlert])
 
@@ -1100,50 +1049,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       showAlert('info', 'ESP32 board disconnected.', 'Board Disconnected')
     }
   }, [teardown, showAlert, uid, email, pushLine])
-
-  // Wire hardware action handlers for WebMCP tools (connect_board / disconnect_board)
-  useEffect(() => {
-    setHardwareActionHandlers({
-      connect: connectExistingOrPrompt,
-      disconnect: async () => { await disconnect() },
-    })
-
-    // Listen for agent cross-tab commands from ChatGPT/Codex browser
-    let bc: BroadcastChannel | null = null
-    try {
-      if (typeof BroadcastChannel !== 'undefined') {
-        bc = new BroadcastChannel('chip_agent_channel')
-        bc.onmessage = (event) => {
-          if (event.data?.type === 'chip:command_connect') {
-            connectExistingOrPrompt(event.data?.baud)
-          } else if (event.data?.type === 'chip:command_disconnect') {
-            disconnect()
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'chip_command_connect' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue)
-          connectExistingOrPrompt(parsed.baud)
-        } catch {
-          // ignore
-        }
-      } else if (e.key === 'chip_command_disconnect' && e.newValue) {
-        disconnect()
-      }
-    }
-    window.addEventListener('storage', handleStorage)
-
-    return () => {
-      window.removeEventListener('storage', handleStorage)
-      if (bc) bc.close()
-    }
-  }, [connectExistingOrPrompt, disconnect])
 
   // Native Web Serial Auto-Disconnect Listener (detects USB physical unplug)
   useEffect(() => {
@@ -1588,10 +1493,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                       <div className="pb-5 min-w-0">
                         <p className="text-[13px] font-semibold text-black leading-tight mb-1">Exposed Page Tools (Read-Only)</p>
                         <p className="text-[12px] text-[#666666] leading-relaxed">
-                          WebMCP exposes 5 live in-browser read tools to the connected agent:
+                          WebMCP exposes live in-browser tools to the connected agent. Agents can read board state, post status updates, save guidance notes, and request hardware actions such as connect board, press reset, select file, or erase board.
                         </p>
                         <div className="flex flex-wrap gap-1.5 mt-2.5">
-                          {['list_devices', 'get_board_status', 'read_serial_logs', 'read_job_status', 'read_dashboard_state'].map((tool) => (
+                          {['list_devices', 'get_board_status', 'read_serial_logs', 'read_job_status', 'read_dashboard_state', 'post_agent_message', 'set_agent_note', 'request_user_action'].map((tool) => (
                             <span key={tool} className="inline-flex items-center px-2 py-0.5 text-[11px] font-mono font-medium bg-white border border-[#e5e5e5] rounded text-[#444444]">
                               {tool}
                             </span>

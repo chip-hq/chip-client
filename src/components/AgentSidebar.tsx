@@ -4,6 +4,12 @@ import { generateCleanSerialSummary } from '../webmcp/tools'
 
 const MCP_URL = 'https://chip-mcp-server.onrender.com/mcp'
 
+interface AgentActionRequest {
+  action: string
+  reason: string
+  details?: string
+}
+
 interface AgentSidebarProps {
   open: boolean
   onClose: () => void
@@ -29,6 +35,8 @@ export function AgentSidebar({
   const [roomKey] = useState(() => getOrCreateRoomKey())
   const [copied, setCopied] = useState(false)
   const [agentMessages, setAgentMessages] = useState<string[]>([])
+  const [agentNote, setAgentNote] = useState<string | null>(null)
+  const [actionRequests, setActionRequests] = useState<AgentActionRequest[]>([])
   const logEndRef = useRef<HTMLDivElement>(null)
 
   const copyMcpUrl = () => {
@@ -45,9 +53,19 @@ export function AgentSidebar({
       const text = (e as CustomEvent<{ text: string }>).detail?.text
       if (text) setAgentMessages((prev) => [...prev, text])
     }
+    const handleNote = (e: Event) => {
+      const note = (e as CustomEvent<{ note: string }>).detail?.note
+      if (note) setAgentNote(note)
+    }
+    const handleActionRequest = (e: Event) => {
+      const request = (e as CustomEvent<AgentActionRequest>).detail
+      if (request?.action && request.reason) setActionRequests((prev) => [...prev, request])
+    }
 
     // 1. Local event
     window.addEventListener('chip:agent-message', handleLocal)
+    window.addEventListener('chip:agent-note', handleNote)
+    window.addEventListener('chip:user-action-request', handleActionRequest)
 
     // 2. Cross-tab BroadcastChannel
     let bc: BroadcastChannel | null = null
@@ -57,6 +75,12 @@ export function AgentSidebar({
         bc.onmessage = (event) => {
           if (event.data?.text) {
             setAgentMessages((prev) => [...prev, event.data.text])
+          }
+          if (event.data?.type === 'chip:agent-note' && event.data.note) {
+            setAgentNote(event.data.note)
+          }
+          if (event.data?.type === 'chip:user-action-request' && event.data.request) {
+            setActionRequests((prev) => [...prev, event.data.request])
           }
         }
       }
@@ -74,11 +98,29 @@ export function AgentSidebar({
           // ignore
         }
       }
+      if (e.key === 'chip_agent_note' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          if (parsed.note) setAgentNote(parsed.note)
+        } catch {
+          // ignore
+        }
+      }
+      if (e.key === 'chip_user_action_request' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          if (parsed.request) setActionRequests((prev) => [...prev, parsed.request])
+        } catch {
+          // ignore
+        }
+      }
     }
     window.addEventListener('storage', handleStorage)
 
     return () => {
       window.removeEventListener('chip:agent-message', handleLocal)
+      window.removeEventListener('chip:agent-note', handleNote)
+      window.removeEventListener('chip:user-action-request', handleActionRequest)
       window.removeEventListener('storage', handleStorage)
       if (bc) bc.close()
     }
@@ -88,7 +130,7 @@ export function AgentSidebar({
     if (open && logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [cleanSummary, agentMessages, open])
+  }, [cleanSummary, agentMessages, actionRequests, agentNote, open])
 
   if (!open) return null
 
@@ -137,7 +179,7 @@ export function AgentSidebar({
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-1.5">
         <p className="text-[10px] uppercase font-semibold text-[#c0c0c0] tracking-wider mb-2">Live Digest</p>
 
-        {cleanSummary.length === 0 && agentMessages.length === 0 ? (
+        {cleanSummary.length === 0 && agentMessages.length === 0 && actionRequests.length === 0 && !agentNote ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center py-12">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d8d8d8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -157,6 +199,12 @@ export function AgentSidebar({
                 <span className="text-[11px] text-[#333] leading-snug">{item}</span>
               </div>
             ))}
+            {agentNote && (
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <span className="text-amber-700 font-bold text-[11px] shrink-0 mt-px">!</span>
+                <span className="text-[11px] text-amber-950 leading-snug">{agentNote}</span>
+              </div>
+            )}
             {agentMessages.map((msg, idx) => (
               <div
                 key={`agent-${idx}`}
@@ -164,6 +212,18 @@ export function AgentSidebar({
               >
                 <span className="text-[#4a6fff] font-bold text-[11px] shrink-0 mt-px">✦</span>
                 <span className="text-[11px] text-[#1a2a66] leading-snug">{msg}</span>
+              </div>
+            ))}
+            {actionRequests.map((request, idx) => (
+              <div
+                key={`action-${idx}`}
+                className="flex items-start gap-2 bg-white border border-[#d9d9d9] rounded-lg px-3 py-2"
+              >
+                <span className="text-black font-bold text-[11px] shrink-0 mt-px">?</span>
+                <span className="text-[11px] text-[#222] leading-snug">
+                  <span className="font-semibold font-mono">{request.action}</span>: {request.reason}
+                  {request.details ? <span className="block text-[#666] mt-1">{request.details}</span> : null}
+                </span>
               </div>
             ))}
           </>

@@ -58,7 +58,7 @@ interface Window {
     readJobStatus: () => Promise<WebMCPToolResult>
     readDashboardState: () => Promise<WebMCPToolResult>
     postAgentMessage: (args?: { message?: string }) => Promise<WebMCPToolResult>
-    connectBoard: (args?: { baud?: number }) => Promise<WebMCPToolResult>
-    disconnectBoard: () => Promise<WebMCPToolResult>
+    setAgentNote: (args?: { note?: string }) => Promise<WebMCPToolResult>
+    requestUserAction: (args?: { action?: string; reason?: string; details?: string }) => Promise<WebMCPToolResult>
   }
 }
