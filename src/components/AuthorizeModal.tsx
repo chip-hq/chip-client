@@ -80,10 +80,21 @@ export function AuthorizeModal({ user, sessionId, backendUrl, mcpUrl }: Authoriz
 
     try {
       const idToken = await user.getIdToken()
+      const searchParams = new URLSearchParams(window.location.search)
+      const redirectUri = searchParams.get('redirect_uri') || ''
+      const state = searchParams.get('state') || ''
+      const clientId = searchParams.get('client_id') || ''
+
       const resp = await fetch(`${backendUrl}/oauth/finalize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, sessionId }),
+        body: JSON.stringify({
+          idToken,
+          sessionId,
+          redirect_uri: redirectUri,
+          state,
+          client_id: clientId,
+        }),
       })
 
       const data = await resp.json()
