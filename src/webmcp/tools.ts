@@ -438,14 +438,30 @@ async function eraseBoard(): Promise<WebMCPToolResult> {
   }
 
   dispatchAgentMessage('Starting board erase from WebMCP...')
-  await actionProvider.eraseBoard()
-  dispatchAgentNote('Board erase was triggered from WebMCP. The dashboard flash log contains the erase result.')
+  try {
+    await actionProvider.eraseBoard()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const summary = `Erase failed: ${message}`
+    dispatchAgentMessage(summary)
+    dispatchAgentNote('Board erase failed. The dashboard Serial Logs panel contains the full erase output.')
+    return {
+      content: [
+        {
+          type: 'text',
+          text: summary,
+        },
+      ],
+    }
+  }
+
+  dispatchAgentNote('Board erase completed successfully from WebMCP. The dashboard flash log contains the erase result.')
 
   return {
     content: [
       {
         type: 'text',
-        text: 'Erase command sent to the connected board. Check the CHIP dashboard log for progress and completion.',
+        text: 'Erase completed successfully on the connected board.',
       },
     ],
   }

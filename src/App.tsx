@@ -580,6 +580,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const logEndRef = useRef<HTMLDivElement | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const serialDrainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const busy = status === 'connecting' || status === 'flashing'
   const connected = status === 'connected' || status === 'flashing' || status === 'done'
@@ -680,6 +681,42 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     write: (data: string) => appendChunk(data),
   }))
 
+  const stopSerialDrain = useCallback(() => {
+    if (serialDrainIntervalRef.current) {
+      clearInterval(serialDrainIntervalRef.current)
+      serialDrainIntervalRef.current = null
+    }
+  }, [])
+
+  const startSerialDrain = useCallback(() => {
+    stopSerialDrain()
+    const transport = transportRef.current
+    if (!transport) return
+
+    const decoder = new TextDecoder()
+    let lineBuf = ''
+    serialDrainIntervalRef.current = setInterval(() => {
+      if (!loaderRef.current || transportRef.current !== transport) {
+        stopSerialDrain()
+        return
+      }
+      if (transport.inWaiting() > 0) {
+        const bytes = transport.peek()
+        transport.flushInput()
+        const text = decoder.decode(bytes)
+        lineBuf += text
+        const lines = lineBuf.split('\n')
+        lineBuf = lines.pop() || ''
+        for (const l of lines) {
+          const clean = l.replace(/\r/g, '').trim()
+          if (clean.length > 0) {
+            pushLine(clean)
+          }
+        }
+      }
+    }, 50)
+  }, [pushLine, stopSerialDrain])
+
   const startJobPoll = useCallback((jobId: string, phase: JobPhase) => {
     if (jobPollRef.current) clearInterval(jobPollRef.current)
     setActiveJob({ jobId, phase, status: 'pending', progress: 0, log: [] })
@@ -742,6 +779,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
       setStatus('flashing')
       setProgress(0)
+      stopSerialDrain()
       if (jobId) {
         setActiveJob({ jobId, phase: 'flash', status: 'started', progress: 0, log: [] })
         reportJobStatus(jobId, 'started', 0)
@@ -814,29 +852,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             await transport.setDTR(false)
             await transport.setRTS(false)
 
-            // Continuously drain transport buffer to capture Serial.println output and feed the companion
-            const decoder = new TextDecoder()
-            let lineBuf = ''
-            const pollInterval = setInterval(() => {
-              if (!loaderRef.current && !transportRef.current) {
-                clearInterval(pollInterval)
-                return
-              }
-              if (transport.inWaiting() > 0) {
-                const bytes = transport.peek()
-                transport.flushInput()
-                const text = decoder.decode(bytes)
-                lineBuf += text
-                const lines = lineBuf.split('\n')
-                lineBuf = lines.pop() || ''
-                for (const l of lines) {
-                  const clean = l.replace(/\r/g, '').trim()
-                  if (clean.length > 0) {
-                    pushLine(clean)
-                  }
-                }
-              }
-            }, 50)
+            startSerialDrain()
           }
         } catch {
           // ignore post-flash reset error
@@ -860,7 +876,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         }
       }
     },
-    [eraseAll, pushLine, reportJobStatus, showAlert]
+    [eraseAll, pushLine, reportJobStatus, showAlert, startSerialDrain, stopSerialDrain]
   )
 
   // Latest-value refs so the once-subscribed WebSocket handlers avoid re-subscribing;
@@ -954,6 +970,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
   const teardown = useCallback(async () => {
     try {
+      stopSerialDrain()
       if (transportRef.current) {
         await transportRef.current.disconnect()
       }
@@ -963,7 +980,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       transportRef.current = null
       loaderRef.current = null
     }
-  }, [])
+  }, [stopSerialDrain])
 
   const connect = useCallback(async () => {
     if (!WEB_SERIAL_OK) return
@@ -1082,13 +1099,15 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     }
   }, [disconnect])
 
-  const eraseChip = useCallback(async () => {
+  const eraseChip = useCallback(async (options: { throwOnError?: boolean } = {}) => {
     if (!loaderRef.current) {
       pushLine('Error: Board is not connected.')
       showAlert('error', 'Board is not connected.', 'Erase Failed')
+      if (options.throwOnError) throw new Error('Board is not connected.')
       return
     }
     setStatus('flashing')
+    stopSerialDrain()
     pushLine('[ERASE] Erasing entire flash memory (this takes ~10-20 seconds)...')
     showAlert('info', 'Erasing entire flash memory (takes ~10-20s)...', 'Flash Erase')
     try {
@@ -1104,14 +1123,15 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       const msg = errMessage(e)
       pushLine(`[ERASE ERROR] ${msg}`)
       showAlert('error', msg, 'Erase Failed')
+      if (options.throwOnError) throw e
     } finally {
       setStatus('connected')
     }
-  }, [pushLine, showAlert])
+  }, [pushLine, showAlert, stopSerialDrain])
 
   useEffect(() => {
     setDashboardActionProvider({
-      eraseBoard: eraseChip,
+      eraseBoard: () => eraseChip({ throwOnError: true }),
     })
   }, [eraseChip])
 
