@@ -1,7 +1,7 @@
 {
   "name": "client",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "author": "Chip",
   "version": "0.0.0",
   "type": "module",
