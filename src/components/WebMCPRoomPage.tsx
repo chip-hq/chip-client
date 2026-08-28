@@ -13,8 +13,9 @@ import { registerWebMCPTools } from '../webmcp/tools'
 export function WebMCPRoomPage() {
   const [status, setStatus] = useState<Record<string, unknown> | null>(null)
 
-  // Parse room key from URL
-  const roomKey = window.location.pathname.split('/webmcp/rooms/')[1]?.split('?')[0] ?? 'unknown'
+  // Parse room key from search params (?room=...) or pathname (/webmcp/rooms/...)
+  const searchParams = new URLSearchParams(window.location.search)
+  const roomKey = searchParams.get('room') || window.location.pathname.split('/webmcp/rooms/')[1]?.split('?')[0] || 'chip-room-active'
 
   useEffect(() => {
     // Register WebMCP tools so agents can call them

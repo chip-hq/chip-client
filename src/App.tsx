@@ -112,7 +112,8 @@ function getFlashStage(progress: number): string {
 
 // ── WebMCP room route detection ─────────────────────────────────────────────
 const IS_WEBMCP_ROOM = typeof window !== 'undefined' &&
-  window.location.pathname.startsWith('/webmcp/rooms/')
+  (window.location.pathname.startsWith('/webmcp/rooms/') ||
+   window.location.search.includes('invite=agent'))
 
 export default function App() {
   // Serve lightweight WebMCP agent page when Codex/Claude opens the room URL
