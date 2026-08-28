@@ -28,7 +28,7 @@ const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
 const BAUD_RATES = [9600, 74880, 115200, 230400, 460800, 921600]
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://chip-backend-q3j1.onrender.com'
-const MCP_URL = import.meta.env.VITE_MCP_URL || 'https://chip-mcp-server.onrender.com'
+const MCP_URL = (import.meta.env.VITE_MCP_URL || 'https://chip-mcp-server.onrender.com').replace(/\/+$/, '') + '/mcp'
 const WS_URL = BACKEND_URL.replace(/^http/, 'ws')
 
 // ── Domain types ────────────────────────────────────────────────────────────
