@@ -581,6 +581,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const wsRef = useRef<WebSocket | null>(null)
   const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const serialDrainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const eraseInFlightRef = useRef(false)
 
   const busy = status === 'connecting' || status === 'flashing'
   const connected = status === 'connected' || status === 'flashing' || status === 'done'
@@ -1139,12 +1140,21 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   }, [disconnect])
 
   const eraseChip = useCallback(async (options: { throwOnError?: boolean } = {}) => {
+    if (eraseInFlightRef.current) {
+      const msg = 'Erase is already in progress.'
+      pushLine(`[ERASE] ${msg}`)
+      if (options.throwOnError) throw new Error(msg)
+      return
+    }
+
     if (!transportRef.current) {
       pushLine('Error: Board is not connected.')
       showAlert('error', 'Board is not connected.', 'Erase Failed')
       if (options.throwOnError) throw new Error('Board is not connected.')
       return
     }
+
+    eraseInFlightRef.current = true
     setStatus('flashing')
     stopSerialDrain()
     pushLine('[ERASE] Erasing entire flash memory (this takes ~10-20 seconds)...')
@@ -1177,6 +1187,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       showAlert('error', msg, 'Erase Failed')
       if (options.throwOnError) throw e
     } finally {
+      eraseInFlightRef.current = false
       setStatus('connected')
     }
   }, [prepareBootloaderSession, pushLine, showAlert, stopSerialDrain])

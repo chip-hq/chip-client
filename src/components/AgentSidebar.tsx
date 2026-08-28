@@ -3,6 +3,7 @@ import { getOrCreateRoomKey } from '../webmcp/room'
 import { generateCleanSerialSummary } from '../webmcp/tools'
 
 const MCP_URL = 'https://chip-mcp-server.onrender.com/mcp'
+const MAX_DIGEST_ITEMS = 30
 
 interface AgentActionRequest {
   action: string
@@ -20,6 +21,17 @@ interface AgentSidebarProps {
   cloudConnected: boolean
   serialLogs?: string[]
   showAlert?: never
+}
+
+function appendUniqueRecent<T>(items: T[], item: T, isSame: (a: T, b: T) => boolean): T[] {
+  const last = items[items.length - 1]
+  if (last && isSame(last, item)) return items
+  const withoutDuplicate = items.filter((existing) => !isSame(existing, item))
+  return [...withoutDuplicate, item].slice(-MAX_DIGEST_ITEMS)
+}
+
+function sameActionRequest(a: AgentActionRequest, b: AgentActionRequest): boolean {
+  return a.action === b.action && a.reason === b.reason && (a.details || '') === (b.details || '')
 }
 
 export function AgentSidebar({
@@ -51,7 +63,7 @@ export function AgentSidebar({
   useEffect(() => {
     const handleLocal = (e: Event) => {
       const text = (e as CustomEvent<{ text: string }>).detail?.text
-      if (text) setAgentMessages((prev) => [...prev, text])
+      if (text) setAgentMessages((prev) => appendUniqueRecent(prev, text, (a, b) => a === b))
     }
     const handleNote = (e: Event) => {
       const note = (e as CustomEvent<{ note: string }>).detail?.note
@@ -59,7 +71,9 @@ export function AgentSidebar({
     }
     const handleActionRequest = (e: Event) => {
       const request = (e as CustomEvent<AgentActionRequest>).detail
-      if (request?.action && request.reason) setActionRequests((prev) => [...prev, request])
+      if (request?.action && request.reason) {
+        setActionRequests((prev) => appendUniqueRecent(prev, request, sameActionRequest))
+      }
     }
 
     // 1. Local event
@@ -74,13 +88,13 @@ export function AgentSidebar({
         bc = new BroadcastChannel('chip_agent_channel')
         bc.onmessage = (event) => {
           if (event.data?.text) {
-            setAgentMessages((prev) => [...prev, event.data.text])
+            setAgentMessages((prev) => appendUniqueRecent(prev, event.data.text, (a, b) => a === b))
           }
           if (event.data?.type === 'chip:agent-note' && event.data.note) {
             setAgentNote(event.data.note)
           }
           if (event.data?.type === 'chip:user-action-request' && event.data.request) {
-            setActionRequests((prev) => [...prev, event.data.request])
+            setActionRequests((prev) => appendUniqueRecent(prev, event.data.request, sameActionRequest))
           }
         }
       }
@@ -93,7 +107,7 @@ export function AgentSidebar({
       if (e.key === 'chip_last_agent_msg' && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue)
-          if (parsed.text) setAgentMessages((prev) => [...prev, parsed.text])
+          if (parsed.text) setAgentMessages((prev) => appendUniqueRecent(prev, parsed.text, (a, b) => a === b))
         } catch {
           // ignore
         }
@@ -109,7 +123,9 @@ export function AgentSidebar({
       if (e.key === 'chip_user_action_request' && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue)
-          if (parsed.request) setActionRequests((prev) => [...prev, parsed.request])
+          if (parsed.request) {
+            setActionRequests((prev) => appendUniqueRecent(prev, parsed.request, sameActionRequest))
+          }
         } catch {
           // ignore
         }

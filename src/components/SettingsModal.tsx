@@ -13,6 +13,54 @@ interface SettingsModalProps {
 
 type SettingsTab = 'companion' | 'flashing' | 'webmcp'
 
+const WEBMCP_COMMANDS = [
+  {
+    name: 'list_devices',
+    access: 'Read-only',
+    description: 'List connected ESP32 boards in this browser session.',
+  },
+  {
+    name: 'get_board_status',
+    access: 'Read-only',
+    description: 'Read chip model, baud rate, board status, gateway status, and room key.',
+  },
+  {
+    name: 'read_serial_logs',
+    access: 'Read-only',
+    description: 'Read recent Serial Logs, with optional limit up to 200 lines.',
+  },
+  {
+    name: 'read_job_status',
+    access: 'Read-only',
+    description: 'Read current compile or flash job phase, progress, logs, and errors.',
+  },
+  {
+    name: 'read_dashboard_state',
+    access: 'Read-only',
+    description: 'Read full dashboard session state, including companion and agent note state.',
+  },
+  {
+    name: 'post_agent_message',
+    access: 'Write',
+    description: 'Post a status update directly into the Live Digest sidebar.',
+  },
+  {
+    name: 'set_agent_note',
+    access: 'Write',
+    description: 'Save persistent guidance or a next-step note in the dashboard.',
+  },
+  {
+    name: 'request_user_action',
+    access: 'Write',
+    description: 'Ask the user to connect, reset, select a file, erase, open logs, or check wiring.',
+  },
+  {
+    name: 'erase_board',
+    access: 'Destructive',
+    description: 'Erase the connected ESP32 flash after the user clearly asks for it.',
+  },
+] as const
+
 // Small copy-to-clipboard button — shows a green check for ~1.5s after copying.
 function CopyButton({ value, className = '' }: { value: string; className?: string }) {
   const [copied, setCopied] = useState(false)
@@ -210,6 +258,35 @@ export function SettingsModal({
                     </div>
                     <div className="text-[11px] text-[#888888] mt-1">
                       Reports the ESP32 connected over USB — chip type, connection status, and baud rate.
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-medium text-black mb-1.5">Available WebMCP commands</div>
+                    <div className="space-y-1.5">
+                      {WEBMCP_COMMANDS.map((command) => {
+                        const badgeClass =
+                          command.access === 'Read-only'
+                            ? 'bg-[#f0fdf4] text-[#16a34a] border-[#86efac]'
+                            : command.access === 'Destructive'
+                              ? 'bg-[#fef2f2] text-[#dc2626] border-[#fecaca]'
+                              : 'bg-[#eff6ff] text-[#2563eb] border-[#bfdbfe]'
+
+                        return (
+                          <div key={command.name} className="border border-[#e5e5e5] rounded-lg p-2.5 bg-[#fafafa]">
+                            <div className="flex items-center gap-1.5">
+                              <code className="text-[11px] font-mono text-black break-all">{command.name}</code>
+                              <span className={`text-[9px] uppercase tracking-wide border rounded px-1 py-px ${badgeClass}`}>
+                                {command.access}
+                              </span>
+                              <CopyButton value={command.name} className="ml-auto" />
+                            </div>
+                            <div className="text-[11px] text-[#888888] mt-1">
+                              {command.description}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
 
