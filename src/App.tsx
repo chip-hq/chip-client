@@ -22,6 +22,7 @@ import { HistoryView } from './components/HistoryView'
 import { setDashboardSnapshotProvider } from './webmcp/tools'
 import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
+import { WebMCPRoomPage } from './components/WebMCPRoomPage'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -109,7 +110,14 @@ function getFlashStage(progress: number): string {
   return 'Done'
 }
 
+// ── WebMCP room route detection ─────────────────────────────────────────────
+const IS_WEBMCP_ROOM = typeof window !== 'undefined' &&
+  window.location.pathname.startsWith('/webmcp/rooms/')
+
 export default function App() {
+  // Serve lightweight WebMCP agent page when Codex/Claude opens the room URL
+  if (IS_WEBMCP_ROOM) return <WebMCPRoomPage />
+
   const { user, loading, error, signIn, logOut } = useFirebaseAuth()
   const [alerts, setAlerts] = useState<AlertItem[]>([])
 
