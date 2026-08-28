@@ -5,11 +5,13 @@ interface SettingsModalProps {
   onClose: () => void
   companionEnabled: boolean
   onToggleCompanion: (enabled: boolean) => void
+  autoReset: boolean
+  onToggleAutoReset: (enabled: boolean) => void
   backendUrl: string
   authToken?: string | null
 }
 
-type SettingsTab = 'companion' | 'webmcp'
+type SettingsTab = 'companion' | 'flashing' | 'webmcp'
 
 // Small copy-to-clipboard button — shows a green check for ~1.5s after copying.
 function CopyButton({ value, className = '' }: { value: string; className?: string }) {
@@ -73,6 +75,8 @@ export function SettingsModal({
   onClose,
   companionEnabled,
   onToggleCompanion,
+  autoReset,
+  onToggleAutoReset,
   backendUrl,
   authToken,
 }: SettingsModalProps) {
@@ -140,6 +144,38 @@ export function SettingsModal({
                       aria-hidden="true"
                       className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
                         companionEnabled ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </>
+            ) : activeTab === 'flashing' ? (
+              <>
+                <div className="text-xs font-semibold text-black tracking-tight mb-4">
+                  Flashing & Hardware Reset
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-b border-[#f5f5f5]">
+                  <div>
+                    <div className="text-xs font-medium text-black">Automatic Board Reset</div>
+                    <div className="text-[11px] text-[#888888] mt-0.5 max-w-[220px]">
+                      Auto-reboot into new sketch over DTR/RTS after flashing. When disabled, you will be prompted to press the EN / Reset button manually.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={autoReset}
+                    onClick={() => onToggleAutoReset(!autoReset)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      autoReset ? 'bg-black' : 'bg-[#d1d5db]'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        autoReset ? 'translate-x-4' : 'translate-x-0'
                       }`}
                     />
                   </button>
@@ -219,6 +255,13 @@ export function SettingsModal({
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
               </svg>
               <span>AI Companion</span>
+            </button>
+
+            <button className={navItemClass('flashing')} onClick={() => setActiveTab('flashing')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+              <span>Flashing & Reset</span>
             </button>
 
             <button className={navItemClass('webmcp')} onClick={() => setActiveTab('webmcp')}>

@@ -407,6 +407,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   })
   // Live mirror of `companionEnabled` so the memoized startJobPoll reads the current toggle.
   const companionEnabledRef = useRef(companionEnabled)
+  const [autoReset, setAutoReset] = useState(() => {
+    return localStorage.getItem('chip_auto_reset') !== 'false'
+  })
+  const autoResetRef = useRef(autoReset)
   const [recentSerialLine, setRecentSerialLine] = useState<string | null>(null)
 
   const handleToggleCompanion = useCallback((enabled: boolean) => {
@@ -414,6 +418,13 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     companionEnabledRef.current = enabled
     localStorage.setItem('chip_web_companion_enabled', enabled ? 'true' : 'false')
     showAlert('info', `AI Web Companion ${enabled ? 'enabled' : 'disabled'}`, 'Settings Updated')
+  }, [showAlert])
+
+  const handleToggleAutoReset = useCallback((enabled: boolean) => {
+    setAutoReset(enabled)
+    autoResetRef.current = enabled
+    localStorage.setItem('chip_auto_reset', enabled ? 'true' : 'false')
+    showAlert('info', `Automatic Board Reset ${enabled ? 'enabled' : 'disabled'}`, 'Settings Updated')
   }, [showAlert])
 
   const uid = user.uid
@@ -571,11 +582,18 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       return
     }
 
-    // Normal application logs (not HTML UI code)
-    setLog((prev) => [...prev, text])
-
     // Forward live telemetry serial lines to the companion iframe
     setRecentSerialLine(text)
+
+    // Check if this line is JSON telemetry (e.g. {"state":"ON","uptime":106078})
+    // JSON telemetry is dedicated to the Live AI Companion and should not clutter standard Serial Logs
+    const isJsonTelemetry = (text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))
+    if (isJsonTelemetry) {
+      return
+    }
+
+    // Normal application logs (not HTML UI code or JSON telemetry)
+    setLog((prev) => [...prev, text])
   }, [showAlert])
   const appendChunk = useCallback((text: string) => {
     setLog((prev) => {
@@ -696,15 +714,34 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         pushLine('[FLASH] Success! Firmware written and verified.')
         showAlert('success', 'Firmware successfully flashed and verified!', 'Flash Complete')
 
-        // Cleanly release bootloader and automatically reboot into firmware (so user doesn't need to press EN button)
-        try {
-          if (loaderRef.current) {
-            pushLine('[FLASH] Rebooting ESP32 into new firmware…')
-            await loaderRef.current.after('hard_reset')
+        // Cleanly release bootloader and automatically reboot into firmware if autoReset enabled
+        if (autoResetRef.current) {
+          try {
+            if (loaderRef.current) {
+              pushLine('[FLASH] Rebooting ESP32 into new firmware…')
+              await loaderRef.current.after('hard_reset')
+            }
+            const transport = transportRef.current
+            if (transport) {
+              // Backup RTS/DTR toggle pulse in case board uses custom transistor pair
+              await transport.setDTR(false)
+              await transport.setRTS(true)
+              await new Promise((r) => setTimeout(r, 150))
+              await transport.setDTR(false)
+              await transport.setRTS(false)
+            }
+          } catch {
+            // ignore post-flash reset error
           }
+        } else {
+          pushLine('[FLASH] Flash completed! Please press the EN / Reset button on your board to start.')
+          showAlert('info', 'Please press the EN / Reset button on your board to start your new sketch.', 'Press EN Button')
+        }
+
+        // Continuously drain transport buffer to capture Serial.println output and feed the companion
+        try {
           const transport = transportRef.current
           if (transport) {
-            // Backup RTS/DTR toggle pulse in case board uses custom transistor pair
             await transport.setDTR(false)
             await transport.setRTS(true)
             await new Promise((r) => setTimeout(r, 150))
@@ -1060,6 +1097,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         onClose={() => setSettingsOpen(false)}
         companionEnabled={companionEnabled}
         onToggleCompanion={handleToggleCompanion}
+        autoReset={autoReset}
+        onToggleAutoReset={handleToggleAutoReset}
         backendUrl={BACKEND_URL}
         authToken={null}
       />
