@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { CompanionPreview } from './CompanionPreview'
 
 export interface JobItem {
@@ -35,12 +35,14 @@ export function HistoryView({ backendUrl, connected, refreshKey, onFlashBinary, 
   const [loading, setLoading] = useState(true)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const selectedJobIdRef = useRef<string | null>(null)
-  selectedJobIdRef.current = selectedJobId
+  useEffect(() => {
+    selectedJobIdRef.current = selectedJobId
+  }, [selectedJobId])
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('code')
   const [copied, setCopied] = useState(false)
 
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch(`${backendUrl}/api/jobs`)
       if (res.ok) {
@@ -61,13 +63,14 @@ export function HistoryView({ backendUrl, connected, refreshKey, onFlashBinary, 
     } finally {
       setLoading(false)
     }
-  }
+  }, [backendUrl])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load + 5s poll; setState runs after the awaited fetch
     fetchJobs()
     const interval = setInterval(fetchJobs, 5000)
     return () => clearInterval(interval)
-  }, [backendUrl, refreshKey])
+  }, [fetchJobs, refreshKey])
 
   const selectedJob = jobs.find((j) => j.jobId === selectedJobId) || (jobs.length > 0 ? jobs[0] : null)
 

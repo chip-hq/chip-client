@@ -15,32 +15,18 @@ interface AlertToastProps {
   onDismiss: (id: string) => void
 }
 
-// Per-type visual config
+// Shared amber palette for all alert types (light #f9e3b3 fill, dark amber text).
+const AMBER = {
+  icon: '#92400e',
+  bg: '#f9e3b3',
+  border: 'rgba(120,53,15,0.35)',
+  title: '#7c2d12',
+  msg: '#7c2d12',
+}
 const THEME = {
-  error: {
-    bar: '#ef4444',
-    icon: '#ef4444',
-    bg: 'rgba(20,20,20,0.97)',
-    border: 'rgba(239,68,68,0.35)',
-    title: '#f87171',
-    msg: '#d1d5db',
-  },
-  success: {
-    bar: '#22c55e',
-    icon: '#22c55e',
-    bg: 'rgba(20,20,20,0.97)',
-    border: 'rgba(34,197,94,0.35)',
-    title: '#4ade80',
-    msg: '#d1d5db',
-  },
-  info: {
-    bar: '#60a5fa',
-    icon: '#60a5fa',
-    bg: 'rgba(20,20,20,0.97)',
-    border: 'rgba(96,165,250,0.35)',
-    title: '#93c5fd',
-    msg: '#d1d5db',
-  },
+  error: AMBER,
+  success: AMBER,
+  info: AMBER,
 }
 
 function TypeIcon({ type }: { type: AlertType }) {
@@ -74,41 +60,11 @@ function SingleAlert({ alert, onDismiss }: { alert: AlertItem; onDismiss: (id: s
   const duration = alert.duration ?? (alert.type === 'error' ? 6000 : 4500)
   const theme = THEME[alert.type]
 
-  // slide-in / slide-out state
   const [visible, setVisible] = useState(false)
   const [leaving, setLeaving] = useState(false)
-  // progress bar width (100 → 0)
-  const [progress, setProgress] = useState(100)
-  const rafRef = useRef<number | null>(null)
-  const startRef = useRef<number | null>(null)
-  const pausedAtRef = useRef<number | null>(null)
   const [paused, setPaused] = useState(false)
-
-  // Trigger enter on mount
-  useEffect(() => {
-    const t = setTimeout(() => setVisible(true), 10)
-    return () => clearTimeout(t)
-  }, [])
-
-  // Auto-dismiss countdown via rAF
-  useEffect(() => {
-    if (paused) return
-
-    const tick = (ts: number) => {
-      if (startRef.current === null) startRef.current = ts
-      const elapsed = ts - startRef.current
-      const remaining = Math.max(0, 100 - (elapsed / duration) * 100)
-      setProgress(remaining)
-      if (remaining > 0) {
-        rafRef.current = requestAnimationFrame(tick)
-      } else {
-        handleDismiss()
-      }
-    }
-
-    rafRef.current = requestAnimationFrame(tick)
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
-  }, [paused, duration]) // eslint-disable-line
+  const remainingRef = useRef(duration)
+  const startRef = useRef<number | null>(null)
 
   const handleDismiss = () => {
     if (leaving) return
@@ -116,23 +72,30 @@ function SingleAlert({ alert, onDismiss }: { alert: AlertItem; onDismiss: (id: s
     setTimeout(() => onDismiss(alert.id), 320)
   }
 
-  const handleMouseEnter = () => {
-    setPaused(true)
-    pausedAtRef.current = Date.now()
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-  }
+  // Trigger enter on mount
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 10)
+    return () => clearTimeout(t)
+  }, [])
 
-  const handleMouseLeave = () => {
-    // Adjust startRef so remaining time is preserved
-    if (pausedAtRef.current !== null && startRef.current !== null) {
-      const pausedDuration = Date.now() - pausedAtRef.current
-      startRef.current += pausedDuration
-      pausedAtRef.current = null
+  // Auto-dismiss after `duration`; pauses while hovered and resumes with time remaining
+  useEffect(() => {
+    if (paused) return
+    startRef.current = Date.now()
+    const t = setTimeout(handleDismiss, remainingRef.current)
+    return () => {
+      clearTimeout(t)
+      if (startRef.current !== null) {
+        remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startRef.current))
+      }
     }
-    setPaused(false)
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only on pause toggle; handleDismiss stays out so the timer isn't reset each render
+  }, [paused])
 
-  const translateY = visible && !leaving ? '0' : '-110%'
+  const handleMouseEnter = () => setPaused(true)
+  const handleMouseLeave = () => setPaused(false)
+
+  const translateY = visible && !leaving ? '0' : '110%'
   const opacity = visible && !leaving ? '1' : '0'
 
   return (
@@ -147,28 +110,20 @@ function SingleAlert({ alert, onDismiss }: { alert: AlertItem; onDismiss: (id: s
           : 'transform 0.38s cubic-bezier(0.16,1,0.3,1), opacity 0.3s ease',
         background: theme.bg,
         border: `1px solid ${theme.border}`,
-        borderLeft: `3px solid ${theme.bar}`,
         borderRadius: '10px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)',
         overflow: 'hidden',
         pointerEvents: 'auto',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
         width: '100%',
         maxWidth: '360px',
-        position: 'relative',
         cursor: 'default',
       }}
       role="alert"
     >
-      {/* Content row */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px 14px' }}>
-        {/* Icon */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px' }}>
         <div style={{ flexShrink: 0, marginTop: '2px' }}>
           <TypeIcon type={alert.type} />
         </div>
 
-        {/* Text */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {alert.title && (
             <div style={{ fontSize: '12px', fontWeight: 600, color: theme.title, marginBottom: '2px', letterSpacing: '-0.01em' }}>
@@ -180,7 +135,6 @@ function SingleAlert({ alert, onDismiss }: { alert: AlertItem; onDismiss: (id: s
           </div>
         </div>
 
-        {/* Dismiss X */}
         <button
           onClick={handleDismiss}
           style={{
@@ -189,13 +143,13 @@ function SingleAlert({ alert, onDismiss }: { alert: AlertItem; onDismiss: (id: s
             border: 'none',
             cursor: 'pointer',
             padding: '2px',
-            color: '#6b7280',
+            color: 'rgba(124,45,18,0.55)',
             lineHeight: 0,
             borderRadius: '4px',
             transition: 'color 0.15s',
           }}
-          onMouseOver={(e) => (e.currentTarget.style.color = '#e5e7eb')}
-          onMouseOut={(e) => (e.currentTarget.style.color = '#6b7280')}
+          onMouseOver={(e) => (e.currentTarget.style.color = '#7c2d12')}
+          onMouseOut={(e) => (e.currentTarget.style.color = 'rgba(124,45,18,0.55)')}
           aria-label="Dismiss"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -204,21 +158,6 @@ function SingleAlert({ alert, onDismiss }: { alert: AlertItem; onDismiss: (id: s
           </svg>
         </button>
       </div>
-
-      {/* Countdown progress bar */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          height: '2.5px',
-          width: `${progress}%`,
-          background: theme.bar,
-          transition: paused ? 'none' : 'width 0.1s linear',
-          borderRadius: '0 0 0 10px',
-          opacity: 0.85,
-        }}
-      />
     </div>
   )
 }
@@ -228,7 +167,7 @@ export function AlertToast({ alerts, onDismiss }: AlertToastProps) {
     <div
       style={{
         position: 'fixed',
-        top: '20px',
+        bottom: '20px',
         right: '20px',
         zIndex: 9999,
         display: 'flex',

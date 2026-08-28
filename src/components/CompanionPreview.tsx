@@ -39,6 +39,7 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine }: Co
       },
       '*'
     )
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- counts frames forwarded to the iframe
     setLiveDataCount((n) => n + 1)
   }, [recentSerialLine])
 

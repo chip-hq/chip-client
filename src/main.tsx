@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
+import { registerWebMCPTools } from './webmcp/tools'
 
 // Suppress noisy third-party browser extension and WebGPU warnings in dev console
 if (typeof window !== 'undefined') {
@@ -35,4 +36,8 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+// Register CHIP's WebMCP tools once for the page lifetime.
+// No-op in browsers without WebMCP (enable chrome://flags/#enable-webmcp-testing to test).
+registerWebMCPTools()
 

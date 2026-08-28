@@ -19,6 +19,9 @@ import { CompanionPreview } from './components/CompanionPreview'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
+import { setDashboardSnapshotProvider } from './webmcp/tools'
+import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
+import { DashAssist } from './components/DashAssist'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -119,8 +122,11 @@ export default function App() {
     setAlerts((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
+  // Surface auth errors from the external auth system as a toast — an intentional
+  // notification triggered by an error-state change, not derived render state.
   useEffect(() => {
     if (error) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- external auth error
       showAlert('error', error, 'Authentication')
     }
   }, [error, showAlert])
@@ -392,6 +398,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   })
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard')
+  const [setupSubTab, setSetupSubTab] = useState<'webmcp' | 'mcp'>('webmcp')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [activeConsoleTab, setActiveConsoleTab] = useState<'log' | 'preview'>('log')
   const [activeCompanionHtml, setActiveCompanionHtml] = useState<string | null>(null)
@@ -399,10 +406,13 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [companionEnabled, setCompanionEnabled] = useState(() => {
     return localStorage.getItem('chip_web_companion_enabled') !== 'false'
   })
+  // Live mirror of `companionEnabled` so the memoized startJobPoll reads the current toggle.
+  const companionEnabledRef = useRef(companionEnabled)
   const [recentSerialLine, setRecentSerialLine] = useState<string | null>(null)
 
   const handleToggleCompanion = useCallback((enabled: boolean) => {
     setCompanionEnabled(enabled)
+    companionEnabledRef.current = enabled
     localStorage.setItem('chip_web_companion_enabled', enabled ? 'true' : 'false')
     showAlert('info', `AI Web Companion ${enabled ? 'enabled' : 'disabled'}`, 'Settings Updated')
   }, [showAlert])
@@ -504,6 +514,32 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const busy = status === 'connecting' || status === 'flashing'
   const connected = status === 'connected' || status === 'flashing' || status === 'done'
 
+  const [roomKey] = useState(() => getOrCreateRoomKey())
+
+  // Feed live board & dashboard snapshot state to the WebMCP tools
+  useEffect(() => {
+    setDashboardSnapshotProvider(() => ({
+      devices: connected
+        ? [{ deviceId: 'default_device', chip, connected, status, baud, transport: 'web-serial' as const }]
+        : [],
+      serialLogs: log,
+      activeJob: activeJob
+        ? {
+            jobId: activeJob.jobId,
+            phase: activeJob.phase,
+            status: activeJob.status,
+            progress: activeJob.progress,
+            log: activeJob.log,
+          }
+        : null,
+      cloudConnected,
+      agentConnected,
+      userEmail: email || null,
+      companionEnabled,
+      roomKey,
+    }))
+  }, [chip, status, connected, baud, log, activeJob, cloudConnected, agentConnected, email, companionEnabled, roomKey])
+
   const uiBufferRef = useRef<string[]>([])
   const isCapturingUiRef = useRef<boolean>(false)
 
@@ -576,7 +612,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
           if (jobPollRef.current) clearInterval(jobPollRef.current)
           jobPollRef.current = null
           if (job.status === 'done') {
-            if (job.webCompanion && companionEnabled) {
+            if (job.webCompanion && companionEnabledRef.current) {
               setActiveCompanionHtml(job.webCompanion)
               setActiveCompanionTitle(`Companion: ${job.filename || 'ESP32 Firmware'}`)
               setActiveConsoleTab('preview')
@@ -589,7 +625,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         // ignore poll failures
       }
     }, 1500)
-  }, [])
+  }, [showAlert])
 
   const reportJobStatus = useCallback(
     async (jobId: string, jobStatus: JobState, jobProgress?: number, jobError?: string) => {
@@ -720,14 +756,17 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     [eraseAll, pushLine, reportJobStatus, showAlert]
   )
 
+  // Latest-value refs so the once-subscribed WebSocket handlers avoid re-subscribing;
+  // synced after commit, read only inside async socket handlers.
   const executeFlashRef = useRef(executeFlash)
-  executeFlashRef.current = executeFlash
-
   const offsetRef = useRef(offset)
-  offsetRef.current = offset
-
   const chipRef = useRef(chip)
-  chipRef.current = chip
+  useEffect(() => {
+    executeFlashRef.current = executeFlash
+    offsetRef.current = offset
+    // eslint-disable-next-line react-hooks/immutability -- latest-ref sync; false positive (chip is in another effect's deps)
+    chipRef.current = chip
+  })
 
   useEffect(() => {
     let ws: WebSocket | null = null
@@ -837,6 +876,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
       pushLine('Syncing with ESP32…')
       const detected = await loader.main()
+      // Set only after sync succeeds so the WS `register` reports "connected" at the right time.
+      // eslint-disable-next-line react-hooks/immutability -- valid async ref write; false positive across await
       loaderRef.current = loader
 
       setChip(detected)
@@ -909,8 +950,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     let isHandlingDisconnect = false
     const handleSerialDisconnect = (event: Event) => {
       // Check if disconnected port matches current transport
-      const disconnectedPort = (event as any).target
-      const currentPort = (transportRef.current as any)?.device
+      const disconnectedPort = event.target as SerialPort | null
+      const currentPort = transportRef.current?.device
 
       if (disconnectedPort && currentPort && disconnectedPort !== currentPort) {
         return
@@ -1061,6 +1102,16 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               </svg>
               <span>{isRefreshing ? 'Syncing…' : 'Refresh'}</span>
             </button>
+
+            <DashAssist
+              boardConnected={connected}
+              chipModel={chip}
+              baudRate={baud}
+              agentConnected={agentConnected}
+              cloudConnected={cloudConnected}
+              serialLogs={log}
+              showAlert={showAlert}
+            />
 
             <span className={`text-[11px] px-2 py-0.5 border border-[#e5e5e5] bg-white font-mono rounded ${cloudConnected ? 'text-[#16a34a] font-medium' : 'text-[#888888]'}`}>
               {cloudConnected ? '● Cloud Online' : '○ Cloud Offline'}
@@ -1217,110 +1268,248 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
             {/* TAB 4: SETUP — AI Agent Connection Flow */}
             {currentTab === 'setup' && (
-              <div className="space-y-3 max-w-xl">
-
+              <div className="space-y-4 max-w-2xl select-none">
                 {/* Header */}
-                <div className="mb-5">
+                <div>
                   <h1 className="text-sm font-semibold text-black tracking-tight">Connect your AI agent</h1>
                   <p className="text-[12px] text-[#888888] mt-0.5">
-                    Follow these steps to link Claude, Cursor, Copilot, or any MCP-compatible agent to Chip.
+                    Select a connection method below to link ChatGPT, Claude, Cursor, Copilot, or any MCP agent.
                   </p>
                 </div>
 
-                {/* Step 1 */}
-                <div className="flex gap-4">
-                  <div className="flex flex-col items-center shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">1</div>
-                    <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
-                  </div>
-                  <div className="pb-5 min-w-0">
-                    <p className="text-[13px] font-semibold text-black leading-tight mb-1">Open your AI agent settings</p>
-                    <p className="text-[12px] text-[#666666] leading-relaxed">
-                      In your AI tool, navigate to <span className="font-medium text-black">Settings</span> and find the{' '}
-                      <span className="font-medium text-black">Connectors</span>,{' '}
-                      <span className="font-medium text-black">Plugins</span>, or{' '}
-                      <span className="font-medium text-black">Integrations</span> section.
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 mt-2.5">
-                      {['Claude', 'Cursor', 'Copilot', 'Cline', 'LibreChat'].map((agent) => (
-                        <span key={agent} className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium bg-white border border-[#e5e5e5] rounded text-[#444444]">
-                          {agent}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                {/* Setup Sub-Tab Selector */}
+                <div className="flex items-center gap-1.5 bg-[#ebebeb] p-1 rounded-xl w-fit text-xs font-medium border border-[#e0e0e0]">
+                  <button
+                    type="button"
+                    onClick={() => setSetupSubTab('webmcp')}
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                      setupSubTab === 'webmcp'
+                        ? 'bg-white text-black shadow-xs font-semibold'
+                        : 'text-[#666666] hover:text-black'
+                    }`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      <path d="M8 9h8" />
+                      <path d="M8 13h6" />
+                    </svg>
+                    <span>WebMCP In-App Room</span>
+                    <span className="text-[9px] font-mono bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full font-bold">ChatGPT & Claude</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSetupSubTab('mcp')}
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                      setupSubTab === 'mcp'
+                        ? 'bg-white text-black shadow-xs font-semibold'
+                        : 'text-[#666666] hover:text-black'
+                    }`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="18" height="18" x="3" y="3" rx="2" />
+                      <path d="M7 7h10" />
+                      <path d="M7 12h10" />
+                    </svg>
+                    <span>Standard MCP Gateway</span>
+                  </button>
                 </div>
 
-                {/* Step 2 */}
-                <div className="flex gap-4">
-                  <div className="flex flex-col items-center shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">2</div>
-                    <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
-                  </div>
-                  <div className="pb-5 min-w-0 w-full">
-                    <p className="text-[13px] font-semibold text-black leading-tight mb-1">Add the MCP server URL</p>
-                    <p className="text-[12px] text-[#666666] leading-relaxed mb-2.5">
-                      Add a new MCP server and paste the URL below. Your agent will automatically discover all available Chip tools.
-                    </p>
-                    <div className="flex items-center gap-2 bg-[#f3f3f3] border border-[#e5e5e5] rounded px-3 py-2">
-                      <code className="flex-1 text-[11px] font-mono text-[#222222] truncate">{MCP_URL}</code>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(MCP_URL)
-                          showAlert('success', 'MCP URL copied to clipboard', 'Copied')
-                        }}
-                        className="shrink-0 text-[#888888] hover:text-black transition-colors cursor-pointer p-1 hover:bg-white rounded border border-transparent hover:border-[#e5e5e5]"
-                        title="Copy MCP URL"
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                        </svg>
-                      </button>
+                {/* SUB-TAB 1: WebMCP In-App Room Connection */}
+                {setupSubTab === 'webmcp' && (
+                  <div className="space-y-3 max-w-xl animate-in fade-in-50 duration-150 pt-2">
+                    {/* Step 1 */}
+                    <div className="flex gap-4">
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">1</div>
+                        <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
+                      </div>
+                      <div className="pb-5 min-w-0 w-full">
+                        <p className="text-[13px] font-semibold text-black leading-tight mb-1">Copy the WebMCP Agent Room Prompt</p>
+                        <p className="text-[12px] text-[#666666] leading-relaxed mb-3">
+                          Copy the formatted room prompt and paste it into ChatGPT or Claude Web. The AI agent will enter this dashboard room and assist you directly.
+                        </p>
+                        <div className="bg-[#f8f8f8] border border-[#e5e5e5] rounded-xl p-3 space-y-2.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-[#666] font-medium">Session Key:</span>
+                            <span className="font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">{roomKey}</span>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const prompt = buildAgentRoomPrompt(roomKey)
+                                navigator.clipboard.writeText(prompt)
+                                showAlert('success', 'Agent Room Prompt copied! Paste into ChatGPT or Claude.', 'Prompt Copied')
+                              }}
+                              className="flex-1 bg-black hover:bg-[#222222] text-white text-xs font-medium py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                              </svg>
+                              <span>Copy Agent Room Prompt</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const url = getWebMCPRoomUrl(roomKey)
+                                navigator.clipboard.writeText(url)
+                                showAlert('success', 'WebMCP Room Link copied!', 'Link Copied')
+                              }}
+                              className="bg-white hover:bg-[#f3f3f3] text-black text-xs font-medium py-2 px-3 rounded-lg transition-colors cursor-pointer border border-[#e5e5e5] flex items-center justify-center gap-1.5"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                <path d="M14 11a5 5 0 0 0 7.54 7.07l1.71-1.71" />
+                              </svg>
+                              <span>Copy Room Link</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className="flex gap-4">
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">2</div>
+                        <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
+                      </div>
+                      <div className="pb-5 min-w-0">
+                        <p className="text-[13px] font-semibold text-black leading-tight mb-1">Exposed Page Tools (Read-Only)</p>
+                        <p className="text-[12px] text-[#666666] leading-relaxed">
+                          WebMCP exposes 5 live in-browser read tools to the connected agent:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 mt-2.5">
+                          {['list_devices', 'get_board_status', 'read_serial_logs', 'read_job_status', 'read_dashboard_state'].map((tool) => (
+                            <span key={tool} className="inline-flex items-center px-2 py-0.5 text-[11px] font-mono font-medium bg-white border border-[#e5e5e5] rounded text-[#444444]">
+                              {tool}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 3 / Done */}
+                    <div className="flex gap-4">
+                      <div className="shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-[#16a34a] text-white flex items-center justify-center">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div className="pb-2 min-w-0">
+                        <p className="text-[13px] font-semibold text-[#16a34a] leading-tight mb-1">Ready for ChatGPT &amp; Claude</p>
+                        <p className="text-[12px] text-[#666666] leading-relaxed">
+                          Paste the prompt into your AI chat and ask:{' '}
+                          <span className="font-mono text-[11px] bg-[#f3f3f3] border border-[#e5e5e5] rounded px-1.5 py-0.5 text-black">
+                            "Check my board status and read serial logs"
+                          </span>
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Step 3 */}
-                <div className="flex gap-4">
-                  <div className="flex flex-col items-center shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">3</div>
-                    <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
-                  </div>
-                  <div className="pb-5 min-w-0">
-                    <p className="text-[13px] font-semibold text-black leading-tight mb-1">Approve the connection</p>
-                    <p className="text-[12px] text-[#666666] leading-relaxed">
-                      Your agent will open a login prompt. Sign in with the same account you used here — this links your agent session to your board.
-                    </p>
-                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-[#888888]">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                      </svg>
-                      OAuth 2.1 with PKCE — your credentials are never shared with the agent.
+                {/* SUB-TAB 2: Standard MCP Gateway Timeline (Original UI) */}
+                {setupSubTab === 'mcp' && (
+                  <div className="space-y-3 max-w-xl animate-in fade-in-50 duration-150 pt-2">
+                    {/* Step 1 */}
+                    <div className="flex gap-4">
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">1</div>
+                        <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
+                      </div>
+                      <div className="pb-5 min-w-0">
+                        <p className="text-[13px] font-semibold text-black leading-tight mb-1">Open your AI agent settings</p>
+                        <p className="text-[12px] text-[#666666] leading-relaxed">
+                          In your AI tool, navigate to <span className="font-medium text-black">Settings</span> and find the{' '}
+                          <span className="font-medium text-black">Connectors</span>,{' '}
+                          <span className="font-medium text-black">Plugins</span>, or{' '}
+                          <span className="font-medium text-black">Integrations</span> section.
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 mt-2.5">
+                          {['Claude', 'Cursor', 'Copilot', 'Cline', 'LibreChat'].map((agent) => (
+                            <span key={agent} className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium bg-white border border-[#e5e5e5] rounded text-[#444444]">
+                              {agent}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className="flex gap-4">
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">2</div>
+                        <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
+                      </div>
+                      <div className="pb-5 min-w-0 w-full">
+                        <p className="text-[13px] font-semibold text-black leading-tight mb-1">Add the MCP server URL</p>
+                        <p className="text-[12px] text-[#666666] leading-relaxed mb-2.5">
+                          Add a new MCP server and paste the URL below. Your agent will automatically discover all available Chip tools.
+                        </p>
+                        <div className="flex items-center gap-2 bg-[#f3f3f3] border border-[#e5e5e5] rounded px-3 py-2">
+                          <code className="flex-1 text-[11px] font-mono text-[#222222] truncate">{MCP_URL}</code>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(MCP_URL)
+                              showAlert('success', 'MCP URL copied to clipboard', 'Copied')
+                            }}
+                            className="shrink-0 text-[#888888] hover:text-black transition-colors cursor-pointer p-1 hover:bg-white rounded border border-transparent hover:border-[#e5e5e5]"
+                            title="Copy MCP URL"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div className="flex gap-4">
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">3</div>
+                        <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
+                      </div>
+                      <div className="pb-5 min-w-0">
+                        <p className="text-[13px] font-semibold text-black leading-tight mb-1">Approve the connection</p>
+                        <p className="text-[12px] text-[#666666] leading-relaxed">
+                          Your agent will open a login prompt. Sign in with the same account you used here — this links your agent session to your board.
+                        </p>
+                        <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-[#888888]">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                          </svg>
+                          OAuth 2.1 with PKCE — your credentials are never shared with the agent.
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Done */}
+                    <div className="flex gap-4">
+                      <div className="shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-[#16a34a] text-white flex items-center justify-center">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div className="pb-2 min-w-0">
+                        <p className="text-[13px] font-semibold text-[#16a34a] leading-tight mb-1">You're live</p>
+                        <p className="text-[12px] text-[#666666] leading-relaxed">
+                          Tell your agent:{' '}
+                          <span className="font-mono text-[11px] bg-[#f3f3f3] border border-[#e5e5e5] rounded px-1.5 py-0.5 text-black">
+                            "compile and flash a blink sketch to my board"
+                          </span>
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                {/* Done */}
-                <div className="flex gap-4">
-                  <div className="shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-[#16a34a] text-white flex items-center justify-center">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="pb-2 min-w-0">
-                    <p className="text-[13px] font-semibold text-[#16a34a] leading-tight mb-1">You're live</p>
-                    <p className="text-[12px] text-[#666666] leading-relaxed">
-                      Tell your agent:{' '}
-                      <span className="font-mono text-[11px] bg-[#f3f3f3] border border-[#e5e5e5] rounded px-1.5 py-0.5 text-black">
-                        "compile and flash a blink sketch to my ESP32"
-                      </span>
-                    </p>
-                  </div>
-                </div>
-
+                )}
               </div>
             )}
 
