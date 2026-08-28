@@ -21,7 +21,7 @@ import { AlertToast, type AlertItem, type AlertType } from './components/AlertTo
 import { HistoryView } from './components/HistoryView'
 import { setDashboardSnapshotProvider } from './webmcp/tools'
 import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
-import { DashAssist } from './components/DashAssist'
+import { AgentSidebar } from './components/AgentSidebar'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -393,13 +393,12 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [progress, setProgress] = useState(0)
   const [log, setLog] = useState<string[]>([])
   const [cloudConnected, setCloudConnected] = useState(false)
-  const [agentConnected, setAgentConnected] = useState(() => {
-    return localStorage.getItem('chip_agent_connected') === 'true'
-  })
+  const [agentConnected, setAgentConnected] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard')
   const [setupSubTab, setSetupSubTab] = useState<'webmcp' | 'mcp'>('webmcp')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [agentSidebarOpen, setAgentSidebarOpen] = useState(false)
   const [activeConsoleTab, setActiveConsoleTab] = useState<'log' | 'preview'>('log')
   const [activeCompanionHtml, setActiveCompanionHtml] = useState<string | null>(null)
   const [activeCompanionTitle, setActiveCompanionTitle] = useState<string | null>(null)
@@ -428,9 +427,11 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         if (res.ok) {
           const data = await res.json()
           const isConn = !!data.connected
+          setAgentConnected(isConn)
           if (isConn) {
-            setAgentConnected(true)
             localStorage.setItem('chip_agent_connected', 'true')
+          } else {
+            localStorage.removeItem('chip_agent_connected')
           }
         }
       } catch {
@@ -466,9 +467,12 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         const agentRes = await fetch(`${BACKEND_URL}/api/agents/status?userId=${uid}`, { signal: AbortSignal.timeout(4000) })
         if (agentRes.ok) {
           const data = await agentRes.json()
-          if (data.connected) {
-            setAgentConnected(true)
+          const isConn = !!data.connected
+          setAgentConnected(isConn)
+          if (isConn) {
             localStorage.setItem('chip_agent_connected', 'true')
+          } else {
+            localStorage.removeItem('chip_agent_connected')
           }
         }
       } catch {
@@ -1060,6 +1064,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         authToken={null}
       />
 
+
       {/* Main View Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Clean Header Bar */}
@@ -1103,15 +1108,19 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               <span>{isRefreshing ? 'Syncing…' : 'Refresh'}</span>
             </button>
 
-            <DashAssist
-              boardConnected={connected}
-              chipModel={chip}
-              baudRate={baud}
-              agentConnected={agentConnected}
-              cloudConnected={cloudConnected}
-              serialLogs={log}
-              showAlert={showAlert}
-            />
+            <button
+              onClick={() => setAgentSidebarOpen(true)}
+              className="h-7 px-2.5 bg-white hover:bg-[#ebebeb] border border-[#e5e5e5] text-[#444444] hover:text-black rounded text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Open Agent sidebar"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <span>Agent</span>
+              {agentConnected && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              )}
+            </button>
 
             <span className={`text-[11px] px-2 py-0.5 border border-[#e5e5e5] bg-white font-mono rounded ${cloudConnected ? 'text-[#16a34a] font-medium' : 'text-[#888888]'}`}>
               {cloudConnected ? '● Cloud Online' : '○ Cloud Offline'}
@@ -1119,8 +1128,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
           </div>
         </header>
 
-        {/* Scrollable Dashboard Body */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5]">
+        {/* Scrollable Body + Agent Sidebar */}
+        <div className="flex flex-1 overflow-hidden">
+          <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5]">
           <div className="max-w-5xl mx-auto space-y-4 pb-12">
             {/* TAB 1: MAIN AUTOMATED AGENT DASHBOARD */}
             {currentTab === 'dashboard' && (
@@ -1573,7 +1583,20 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               </section>
             )}
           </div>
-        </main>
+          </main>
+
+          {/* Inline Agent Panel — sits beside the page content */}
+          <AgentSidebar
+            open={agentSidebarOpen}
+            onClose={() => setAgentSidebarOpen(false)}
+            boardConnected={connected}
+            chipModel={chip}
+            baudRate={baud}
+            agentConnected={agentConnected}
+            cloudConnected={cloudConnected}
+            serialLogs={log}
+          />
+        </div>
       </div>
     </div>
   )
