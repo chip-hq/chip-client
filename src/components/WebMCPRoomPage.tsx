@@ -8,7 +8,7 @@
  *  • Visible status card with board state for agents that can read DOM text
  */
 import { useEffect, useState } from 'react'
-import { registerWebMCPTools, setDashboardSnapshotProvider } from '../webmcp/tools'
+import { registerWebMCPTools } from '../webmcp/tools'
 
 export function WebMCPRoomPage() {
   const [status, setStatus] = useState<Record<string, unknown> | null>(null)
