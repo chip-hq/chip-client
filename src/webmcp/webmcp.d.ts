@@ -57,5 +57,6 @@ interface Window {
     readSerialLogs: (args?: { limit?: number }) => Promise<WebMCPToolResult>
     readJobStatus: () => Promise<WebMCPToolResult>
     readDashboardState: () => Promise<WebMCPToolResult>
+    postAgentMessage: (args?: { message?: string }) => Promise<WebMCPToolResult>
   }
 }
