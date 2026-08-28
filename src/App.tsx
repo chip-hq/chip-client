@@ -245,12 +245,59 @@ function SignInScreen({ onSignIn }: SignInScreenProps) {
         </div>
       </div>
 
-      {/* Right Column — Floating amber panel with gap & radius */}
-      <div className="flex-1 p-4 flex items-stretch">
-        <div className="flex-1 bg-[#92400e] rounded-2xl p-8 sm:p-12 flex flex-col justify-center text-white relative overflow-hidden">
+      {/* Right Column — Topographic Emerald Halftone Hero Panel */}
+      <div className="flex-1 p-3 sm:p-4 flex items-stretch">
+        <div className="flex-1 bg-[#030a05] border border-[#0d2814] rounded-2xl p-8 sm:p-12 flex flex-col justify-center text-white relative overflow-hidden shadow-2xl">
+          {/* Glowing Emerald Ambient Light */}
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-[#00e676]/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute top-1/2 right-0 w-[500px] h-[500px] bg-[#10b981]/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-[#052e16]/80 rounded-full blur-2xl pointer-events-none" />
+
+          {/* Topographic Elevation Contour Map Background Lines */}
+          <svg
+            className="absolute inset-0 w-full h-full object-cover opacity-65 pointer-events-none select-none"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 800 800"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id="contourGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#00e676" stopOpacity="0.8" />
+                <stop offset="50%" stopColor="#10b981" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#047857" stopOpacity="0.15" />
+              </linearGradient>
+              <pattern id="dotHalftone" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
+                <circle cx="2" cy="2" r="1" fill="#00e676" fillOpacity="0.22" />
+              </pattern>
+            </defs>
+
+            {/* Halftone Dot Grid */}
+            <rect width="100%" height="100%" fill="url(#dotHalftone)" />
+
+            {/* Organic Topographic Contour Paths */}
+            <path d="M-100,150 C120,80 250,280 450,180 C650,80 720,250 900,200" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" />
+            <path d="M-100,220 C100,160 220,340 430,260 C640,180 700,320 900,280" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" opacity="0.9" />
+            <path d="M-100,300 C80,240 200,420 400,340 C600,260 680,400 900,360" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" opacity="0.8" />
+            <path d="M-100,380 C60,320 180,500 380,420 C580,340 660,480 900,440" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" opacity="0.75" />
+            <path d="M-100,460 C40,400 160,580 360,500 C560,420 640,560 900,520" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" opacity="0.7" />
+            <path d="M-100,540 C20,480 140,660 340,580 C540,500 620,640 900,600" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" opacity="0.65" />
+            <path d="M-100,620 C0,560 120,740 320,660 C520,580 600,720 900,680" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" opacity="0.55" />
+            <path d="M-100,700 C-20,640 100,820 300,740 C500,660 580,800 900,760" fill="none" stroke="url(#contourGrad)" strokeWidth="1.5" opacity="0.45" />
+
+            {/* Accent Elevation Nodes */}
+            <circle cx="450" cy="180" r="3" fill="#00e676" />
+            <circle cx="430" cy="260" r="3" fill="#00e676" opacity="0.8" />
+            <circle cx="400" cy="340" r="3" fill="#00e676" opacity="0.6" />
+            <circle cx="380" cy="420" r="3" fill="#00e676" opacity="0.5" />
+          </svg>
 
           {/* Hero Content — center-left aligned */}
           <div className="relative z-10 max-w-xl">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#00e676]/10 border border-[#00e676]/30 text-[#00e676] text-[11px] font-mono font-medium mb-5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00e676] animate-pulse" />
+              <span>HARDWARE AGENT PLATFORM</span>
+            </div>
+
             <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight mb-4 text-white">
               Build, compile & flash ESP32 firmware with AI agents in real time.
             </h2>
@@ -260,25 +307,25 @@ function SignInScreen({ onSignIn }: SignInScreenProps) {
             </p>
 
             {/* Quick Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6 border-t border-white/15">
-              <div className="bg-white/8 border border-white/10 p-3.5 rounded-xl">
-                <div className="text-lg font-bold text-white">0s</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6 border-t border-white/10">
+              <div className="bg-[#06190c]/80 border border-[#143e1d] p-3.5 rounded-xl backdrop-blur-xs">
+                <div className="text-lg font-bold text-white font-mono">0s</div>
                 <div className="text-xs text-white/55 mt-0.5">Zero CLI Setup</div>
               </div>
-              <div className="bg-white/8 border border-white/10 p-3.5 rounded-xl">
-                <div className="text-lg font-bold text-[#fcd34d]">MCP</div>
+              <div className="bg-[#06190c]/80 border border-[#143e1d] p-3.5 rounded-xl backdrop-blur-xs">
+                <div className="text-lg font-bold text-[#00e676] font-mono">MCP</div>
                 <div className="text-xs text-white/55 mt-0.5">Any AI Agent</div>
               </div>
-              <div className="bg-white/8 border border-white/10 p-3.5 rounded-xl">
-                <div className="text-lg font-bold text-white">921.6k</div>
+              <div className="bg-[#06190c]/80 border border-[#143e1d] p-3.5 rounded-xl backdrop-blur-xs">
+                <div className="text-lg font-bold text-white font-mono">921.6k</div>
                 <div className="text-xs text-white/55 mt-0.5">High Speed USB</div>
               </div>
             </div>
           </div>
 
           {/* Bottom Tagline */}
-          <div className="absolute bottom-6 left-8 sm:left-12 text-[11px] text-white/30">
-            Chip • Model Context Protocol Hardware Flasher
+          <div className="absolute bottom-6 left-8 sm:left-12 text-[11px] text-[#00e676]/40 font-mono">
+            CHIP // MODEL CONTEXT PROTOCOL FLASHER
           </div>
         </div>
       </div>
