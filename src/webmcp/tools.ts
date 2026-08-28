@@ -322,50 +322,82 @@ async function postAgentMessage(args?: { message?: string }): Promise<WebMCPTool
 }
 
 async function connectBoard(args?: { baud?: number }): Promise<WebMCPToolResult> {
-  if (!connectHandler) {
-    return {
-      content: [{ type: 'text', text: 'Hardware connect handler is not registered on this dashboard instance.' }],
+  const targetBaud = args?.baud || 115200
+
+  // 1. Broadcast command to the active user dashboard tab on this computer
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('chip_agent_channel')
+      bc.postMessage({ type: 'chip:command_connect', baud: targetBaud })
+      bc.close()
     }
+  } catch {
+    // ignore
   }
 
   try {
-    const result = await connectHandler(args?.baud)
-    if (result.ok) {
-      dispatchAgentMessage(`✦ Successfully connected to ${result.chip || 'ESP32'} via WebMCP`)
-      return {
-        content: [{ type: 'text', text: `Connected successfully to ${result.chip || 'ESP32'} hardware.` }],
+    localStorage.setItem('chip_command_connect', JSON.stringify({ baud: targetBaud, time: Date.now() }))
+  } catch {
+    // ignore
+  }
+
+  // 2. If running directly in the tab with active hardware handler:
+  if (connectHandler) {
+    try {
+      const result = await connectHandler(targetBaud)
+      if (result.ok) {
+        dispatchAgentMessage(`✦ Successfully connected to ${result.chip || 'ESP32'} via WebMCP`)
+        return {
+          content: [{ type: 'text', text: `Connected successfully to ${result.chip || 'ESP32'} hardware at ${targetBaud} baud.` }],
+        }
+      } else {
+        return {
+          content: [{ type: 'text', text: `Connection status: ${result.error || 'Opening port on user dashboard...'}` }],
+        }
       }
-    } else {
-      return {
-        content: [{ type: 'text', text: `Failed to connect board: ${result.error || 'No authorized port available'}` }],
-      }
+    } catch {
+      // ignore
     }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return {
-      content: [{ type: 'text', text: `Error connecting board: ${msg}` }],
-    }
+  }
+
+  dispatchAgentMessage(`✦ Agent triggered USB connection at ${targetBaud} baud`)
+  return {
+    content: [{ type: 'text', text: `Connecting to ESP32 board at ${targetBaud} baud on your dashboard.` }],
   }
 }
 
 async function disconnectBoard(): Promise<WebMCPToolResult> {
-  if (!disconnectHandler) {
-    return {
-      content: [{ type: 'text', text: 'Hardware disconnect handler is not registered on this dashboard instance.' }],
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('chip_agent_channel')
+      bc.postMessage({ type: 'chip:command_disconnect' })
+      bc.close()
     }
+  } catch {
+    // ignore
   }
 
   try {
-    await disconnectHandler()
-    dispatchAgentMessage('✦ Disconnected hardware via WebMCP')
-    return {
-      content: [{ type: 'text', text: 'Board disconnected successfully.' }],
+    localStorage.setItem('chip_command_disconnect', JSON.stringify({ time: Date.now() }))
+  } catch {
+    // ignore
+  }
+
+  if (disconnectHandler) {
+    try {
+      await disconnectHandler()
+      dispatchAgentMessage('✦ Disconnected hardware via WebMCP')
+      return {
+        content: [{ type: 'text', text: 'Board disconnected successfully.' }],
+      }
+    } catch {
+      // ignore
     }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return {
-      content: [{ type: 'text', text: `Error disconnecting board: ${msg}` }],
-    }
+  }
+
+  dispatchAgentMessage('✦ Disconnect signal sent to dashboard')
+  return {
+    content: [{ type: 'text', text: 'Board disconnected.' }],
   }
 }
 

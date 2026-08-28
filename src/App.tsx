@@ -1107,6 +1107,42 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       connect: connectExistingOrPrompt,
       disconnect: async () => { await disconnect() },
     })
+
+    // Listen for agent cross-tab commands from ChatGPT/Codex browser
+    let bc: BroadcastChannel | null = null
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('chip_agent_channel')
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'chip:command_connect') {
+            connectExistingOrPrompt(event.data?.baud)
+          } else if (event.data?.type === 'chip:command_disconnect') {
+            disconnect()
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'chip_command_connect' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          connectExistingOrPrompt(parsed.baud)
+        } catch {
+          // ignore
+        }
+      } else if (e.key === 'chip_command_disconnect' && e.newValue) {
+        disconnect()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      if (bc) bc.close()
+    }
   }, [connectExistingOrPrompt, disconnect])
 
   // Native Web Serial Auto-Disconnect Listener (detects USB physical unplug)
