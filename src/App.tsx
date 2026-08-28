@@ -717,6 +717,44 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     }, 50)
   }, [pushLine, stopSerialDrain])
 
+  const prepareBootloaderSession = useCallback(
+    async (operationBaud: number, label: string) => {
+      const currentTransport = transportRef.current
+      const port = currentTransport?.device
+      if (!port) throw new Error('Board is not connected.')
+
+      stopSerialDrain()
+      pushLine(`[${label}] Re-syncing ESP32 bootloader at ${operationBaud} baud...`)
+
+      try {
+        currentTransport.flushInput()
+      } catch {
+        // ignore stale-buffer cleanup failures
+      }
+
+      try {
+        await currentTransport.disconnect()
+      } catch {
+        // The port may already be closed; the next Transport will reopen it.
+      }
+
+      const transport = new Transport(port)
+      transportRef.current = transport
+      const loader = new ESPLoader({
+        transport,
+        baudrate: operationBaud,
+        terminal,
+      })
+
+      const detected = await loader.main()
+      loaderRef.current = loader
+      setChip(detected)
+      pushLine(`[${label}] Bootloader ready: ${detected}`)
+      return loader
+    },
+    [pushLine, stopSerialDrain, terminal]
+  )
+
   const startJobPoll = useCallback((jobId: string, phase: JobPhase) => {
     if (jobPollRef.current) clearInterval(jobPollRef.current)
     setActiveJob({ jobId, phase, status: 'pending', progress: 0, log: [] })
@@ -769,7 +807,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
   const executeFlash = useCallback(
     async (fileData: Uint8Array, fileOffset: string, jobId?: string) => {
-      if (!loaderRef.current) {
+      if (!transportRef.current) {
         const msg = 'Board is not connected. Connect via Web Serial first.'
         showAlert('error', msg, 'Board Not Connected')
         pushLine(`[FLASH ERROR] ${msg}`)
@@ -786,6 +824,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       }
 
       try {
+        const loader = await prepareBootloaderSession(baud, 'FLASH')
         const offsetNum = parseOffset(fileOffset)
         const fileArray = [{ data: fileData, address: offsetNum }]
         const flashSize = 'keep'
@@ -796,7 +835,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         if (jobId) reportJobStatus(jobId, 'uploading', 10)
 
         let lastReportedPct = 0
-        await loaderRef.current.writeFlash({
+        await loader.writeFlash({
           fileArray,
           flashSize,
           flashMode,
@@ -876,7 +915,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         }
       }
     },
-    [eraseAll, pushLine, reportJobStatus, showAlert, startSerialDrain, stopSerialDrain]
+    [baud, eraseAll, prepareBootloaderSession, pushLine, reportJobStatus, showAlert, startSerialDrain, stopSerialDrain]
   )
 
   // Latest-value refs so the once-subscribed WebSocket handlers avoid re-subscribing;
@@ -1100,7 +1139,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   }, [disconnect])
 
   const eraseChip = useCallback(async (options: { throwOnError?: boolean } = {}) => {
-    if (!loaderRef.current) {
+    if (!transportRef.current) {
       pushLine('Error: Board is not connected.')
       showAlert('error', 'Board is not connected.', 'Erase Failed')
       if (options.throwOnError) throw new Error('Board is not connected.')
@@ -1111,7 +1150,20 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     pushLine('[ERASE] Erasing entire flash memory (this takes ~10-20 seconds)...')
     showAlert('info', 'Erasing entire flash memory (takes ~10-20s)...', 'Flash Erase')
     try {
-      await loaderRef.current.eraseFlash()
+      const eraseOnce = async () => {
+        const loader = await prepareBootloaderSession(115200, 'ERASE')
+        await loader.eraseFlash()
+      }
+
+      try {
+        await eraseOnce()
+      } catch (e) {
+        const msg = errMessage(e)
+        if (!/Invalid head of packet|serial noise|corruption/i.test(msg)) throw e
+        pushLine('[ERASE] Serial packet was corrupt. Re-syncing once and retrying erase...')
+        await eraseOnce()
+      }
+
       // Clear all active companion visualizer and telemetry state since board flash is wiped
       setActiveCompanionHtml(null)
       setActiveCompanionTitle(null)
@@ -1127,7 +1179,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     } finally {
       setStatus('connected')
     }
-  }, [pushLine, showAlert, stopSerialDrain])
+  }, [prepareBootloaderSession, pushLine, showAlert, stopSerialDrain])
 
   useEffect(() => {
     setDashboardActionProvider({
