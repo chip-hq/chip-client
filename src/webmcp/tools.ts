@@ -248,7 +248,18 @@ async function readDashboardState(): Promise<WebMCPToolResult> {
   }
 }
 
-// ── Register WebMCP Tools ───────────────────────────────────────────────────
+// ── Agent Message Dispatcher ────────────────────────────────────────────────
+// Agents call this to push a message into the dashboard Live Digest sidebar.
+export function dispatchAgentMessage(text: string): void {
+  window.dispatchEvent(new CustomEvent('chip:agent-message', { detail: { text } }))
+}
+
+async function postAgentMessage(args: { message?: string }): Promise<WebMCPToolResult> {
+  const text = (args?.message ?? '').trim()
+  if (!text) return { content: [{ type: 'text', text: 'Error: message field is required.' }] }
+  dispatchAgentMessage(text)
+  return { content: [{ type: 'text', text: `Message delivered to dashboard: "${text}"` }] }
+}
 
 export function registerWebMCPTools(): void {
   // Always register browser console hooks for WebMCP tool testing (dev + prod)
@@ -258,9 +269,10 @@ export function registerWebMCPTools(): void {
     readSerialLogs,
     readJobStatus,
     readDashboardState,
+    postAgentMessage,
   }
   console.log(
-    '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.readSerialLogs()',
+    '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.postAgentMessage({ message: "Hello!" })',
   )
 
   const modelContext = document.modelContext
@@ -311,6 +323,19 @@ export function registerWebMCPTools(): void {
       inputSchema: { type: 'object', properties: {} },
       annotations: { title: 'Read full dashboard state snapshot', readOnlyHint: true },
       execute: readDashboardState,
+    },
+    {
+      name: 'post_agent_message',
+      description: 'Post a message or status update from the agent directly into the CHIP dashboard Live Digest sidebar panel. Use this to communicate findings or actions to the user.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', description: 'The message text to display in the dashboard.' },
+        },
+        required: ['message'],
+      },
+      annotations: { title: 'Post message to dashboard sidebar', readOnlyHint: false },
+      execute: (args) => postAgentMessage(args as { message?: string }),
     },
   ]
 

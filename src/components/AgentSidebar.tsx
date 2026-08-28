@@ -28,6 +28,7 @@ export function AgentSidebar({
 }: AgentSidebarProps) {
   const [roomKey] = useState(() => getOrCreateRoomKey())
   const [copied, setCopied] = useState(false)
+  const [agentMessages, setAgentMessages] = useState<string[]>([])
   const logEndRef = useRef<HTMLDivElement>(null)
 
   const copyMcpUrl = () => {
@@ -40,10 +41,19 @@ export function AgentSidebar({
   const { cleanSummary } = generateCleanSerialSummary(serialLogs)
 
   useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text
+      if (text) setAgentMessages((prev) => [...prev, text])
+    }
+    window.addEventListener('chip:agent-message', handler)
+    return () => window.removeEventListener('chip:agent-message', handler)
+  }, [])
+
+  useEffect(() => {
     if (open && logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [cleanSummary, open])
+  }, [cleanSummary, agentMessages, open])
 
   if (!open) return null
 
@@ -92,7 +102,7 @@ export function AgentSidebar({
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-1.5">
         <p className="text-[10px] uppercase font-semibold text-[#c0c0c0] tracking-wider mb-2">Live Digest</p>
 
-        {cleanSummary.length === 0 ? (
+        {cleanSummary.length === 0 && agentMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center py-12">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d8d8d8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -102,15 +112,26 @@ export function AgentSidebar({
             </p>
           </div>
         ) : (
-          cleanSummary.map((item, idx) => (
-            <div
-              key={idx}
-              className="flex items-start gap-2 bg-[#fafafa] border border-[#f0f0f0] rounded-lg px-3 py-2"
-            >
-              <span className="text-[#999] font-bold text-[11px] shrink-0 mt-px">›</span>
-              <span className="text-[11px] text-[#333] leading-snug">{item}</span>
-            </div>
-          ))
+          <>
+            {cleanSummary.map((item, idx) => (
+              <div
+                key={`log-${idx}`}
+                className="flex items-start gap-2 bg-[#fafafa] border border-[#f0f0f0] rounded-lg px-3 py-2"
+              >
+                <span className="text-[#999] font-bold text-[11px] shrink-0 mt-px">›</span>
+                <span className="text-[11px] text-[#333] leading-snug">{item}</span>
+              </div>
+            ))}
+            {agentMessages.map((msg, idx) => (
+              <div
+                key={`agent-${idx}`}
+                className="flex items-start gap-2 bg-[#f0f4ff] border border-[#dde6ff] rounded-lg px-3 py-2"
+              >
+                <span className="text-[#4a6fff] font-bold text-[11px] shrink-0 mt-px">✦</span>
+                <span className="text-[11px] text-[#1a2a66] leading-snug">{msg}</span>
+              </div>
+            ))}
+          </>
         )}
         <div ref={logEndRef} />
       </div>

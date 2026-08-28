@@ -27,9 +27,9 @@ export function getOrCreateRoomKey(): string {
 }
 
 export function getWebMCPRoomUrl(roomKey: string): string {
-  if (typeof window === 'undefined') return `https://chip-dashboard.com/webmcp/rooms/${roomKey}?invite=agent#webmcp`
+  if (typeof window === 'undefined') return `https://chip-mocha.vercel.app/?room=${roomKey}&invite=agent#webmcp`
   const origin = window.location.origin
-  return `${origin}/webmcp/rooms/${roomKey}?invite=agent#webmcp`
+  return `${origin}/?room=${roomKey}&invite=agent#webmcp`
 }
 
 export function buildAgentRoomPrompt(roomKey: string): string {
