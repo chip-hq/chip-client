@@ -19,7 +19,7 @@ import { CompanionPreview } from './components/CompanionPreview'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
-import { setDashboardSnapshotProvider } from './webmcp/tools'
+import { setDashboardSnapshotProvider, setHardwareActionHandlers } from './webmcp/tools'
 import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
 import './App.css'
@@ -993,6 +993,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
           })
         )
       }
+      return { ok: true, chip: detected }
     } catch (e) {
       const msg = errMessage(e)
       if (/No port selected|cancel/i.test(msg)) {
@@ -1003,6 +1004,68 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         setStatus('idle')
       }
       await teardown()
+      return { ok: false, error: msg }
+    }
+  }, [baud, pushLine, teardown, terminal, uid, email, showAlert])
+
+  const connectExistingOrPrompt = useCallback(async (targetBaud?: number): Promise<{ ok: boolean; chip?: string; error?: string }> => {
+    if (!WEB_SERIAL_OK) return { ok: false, error: 'Web Serial not supported in this browser' }
+    const useBaud = targetBaud || baud
+    setStatus('connecting')
+    pushLine('Auto-connecting Web Serial port…')
+
+    try {
+      let port: SerialPort | null = null
+      const ports = await navigator.serial.getPorts()
+      if (ports.length > 0) {
+        port = ports[0]
+      } else {
+        port = await navigator.serial.requestPort({})
+      }
+
+      const transport = new Transport(port)
+      transportRef.current = transport
+
+      const loader = new ESPLoader({
+        transport,
+        baudrate: useBaud,
+        terminal,
+      })
+
+      pushLine('Syncing with ESP32…')
+      const detected = await loader.main()
+      loaderRef.current = loader
+
+      setChip(detected)
+      setStatus('connected')
+      pushLine(`Connected: ${detected}`)
+      showAlert('success', `ESP32 connected successfully (${detected})`, 'Board Connected')
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'register',
+            deviceId: 'default_device',
+            chip: detected,
+            connected: true,
+            userId: uid,
+            uid,
+            email,
+          })
+        )
+      }
+      return { ok: true, chip: detected }
+    } catch (e) {
+      const msg = errMessage(e)
+      if (/No port selected|cancel/i.test(msg)) {
+        setStatus('idle')
+      } else {
+        showAlert('error', msg, 'Connection Failed')
+        pushLine(`Error: ${msg}`)
+        setStatus('idle')
+      }
+      await teardown()
+      return { ok: false, error: msg }
     }
   }, [baud, pushLine, teardown, terminal, uid, email, showAlert])
 
@@ -1037,6 +1100,14 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       showAlert('info', 'ESP32 board disconnected.', 'Board Disconnected')
     }
   }, [teardown, showAlert, uid, email, pushLine])
+
+  // Wire hardware action handlers for WebMCP tools (connect_board / disconnect_board)
+  useEffect(() => {
+    setHardwareActionHandlers({
+      connect: connectExistingOrPrompt,
+      disconnect: async () => { await disconnect() },
+    })
+  }, [connectExistingOrPrompt, disconnect])
 
   // Native Web Serial Auto-Disconnect Listener (detects USB physical unplug)
   useEffect(() => {

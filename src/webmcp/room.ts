@@ -49,6 +49,8 @@ AUTONOMOUS WORKFLOW (Execute immediately without waiting for confirmation):
 3. Call 'read_serial_logs' to check live serial console output and provide recommendations or assist with firmware compilation.
 
 Exposed WebMCP Tools:
+- connect_board: Automatically connect to the plugged-in ESP32 board over USB Web Serial
+- disconnect_board: Safely disconnect from the ESP32 board
 - list_devices: List connected microcontroller hardware
 - get_board_status: Get hardware connection, baud rate & gateway status
 - post_agent_message: Post status updates or advice directly to the user's dashboard Live Digest sidebar (Proactive)

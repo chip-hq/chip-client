@@ -55,6 +55,19 @@ export function setDashboardSnapshotProvider(next: () => DashboardSnapshot): voi
   snapshotProvider = next
 }
 
+export type ConnectResult = { ok: boolean; chip?: string; error?: string }
+
+let connectHandler: ((baud?: number) => Promise<ConnectResult>) | null = null
+let disconnectHandler: (() => Promise<void>) | null = null
+
+export function setHardwareActionHandlers(handlers: {
+  connect: (baud?: number) => Promise<ConnectResult>
+  disconnect: () => Promise<void>
+}): void {
+  connectHandler = handlers.connect
+  disconnectHandler = handlers.disconnect
+}
+
 async function getLiveDevices(): Promise<ChipDevice[]> {
   const snapshot = snapshotProvider()
   if (snapshot.devices.length > 0) return snapshot.devices
@@ -308,6 +321,54 @@ async function postAgentMessage(args?: { message?: string }): Promise<WebMCPTool
   return { content: [{ type: 'text', text: `Message delivered to dashboard: "${text}"` }] }
 }
 
+async function connectBoard(args?: { baud?: number }): Promise<WebMCPToolResult> {
+  if (!connectHandler) {
+    return {
+      content: [{ type: 'text', text: 'Hardware connect handler is not registered on this dashboard instance.' }],
+    }
+  }
+
+  try {
+    const result = await connectHandler(args?.baud)
+    if (result.ok) {
+      dispatchAgentMessage(`✦ Successfully connected to ${result.chip || 'ESP32'} via WebMCP`)
+      return {
+        content: [{ type: 'text', text: `Connected successfully to ${result.chip || 'ESP32'} hardware.` }],
+      }
+    } else {
+      return {
+        content: [{ type: 'text', text: `Failed to connect board: ${result.error || 'No authorized port available'}` }],
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {
+      content: [{ type: 'text', text: `Error connecting board: ${msg}` }],
+    }
+  }
+}
+
+async function disconnectBoard(): Promise<WebMCPToolResult> {
+  if (!disconnectHandler) {
+    return {
+      content: [{ type: 'text', text: 'Hardware disconnect handler is not registered on this dashboard instance.' }],
+    }
+  }
+
+  try {
+    await disconnectHandler()
+    dispatchAgentMessage('✦ Disconnected hardware via WebMCP')
+    return {
+      content: [{ type: 'text', text: 'Board disconnected successfully.' }],
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {
+      content: [{ type: 'text', text: `Error disconnecting board: ${msg}` }],
+    }
+  }
+}
+
 export function registerWebMCPTools(): void {
   // Always register browser console hooks for WebMCP tool testing (dev + prod)
   window.__chipWebMCP = {
@@ -317,9 +378,11 @@ export function registerWebMCPTools(): void {
     readJobStatus,
     readDashboardState,
     postAgentMessage,
+    connectBoard,
+    disconnectBoard,
   }
   console.log(
-    '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.postAgentMessage({ message: "Hello!" })',
+    '[WebMCP] Tools registered. Try:\n  await window.__chipWebMCP.getBoardStatus()\n  await window.__chipWebMCP.connectBoard()',
   )
 
   const modelContext = document.modelContext
@@ -383,6 +446,25 @@ export function registerWebMCPTools(): void {
       },
       annotations: { title: 'Post message to dashboard sidebar', readOnlyHint: false },
       execute: (args) => postAgentMessage(args as { message?: string }),
+    },
+    {
+      name: 'connect_board',
+      description: 'Automatically connect to the plugged-in ESP32 microcontroller over USB Web Serial without requiring manual user clicks. Detects chip model, baud rate, and starts serial streaming.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          baud: { type: 'number', description: 'Baud rate to connect with (default: 115200).' },
+        },
+      },
+      annotations: { title: 'Connect to ESP32 hardware', readOnlyHint: false },
+      execute: (args) => connectBoard(args as { baud?: number }),
+    },
+    {
+      name: 'disconnect_board',
+      description: 'Safely disconnect and release the USB Web Serial port for the connected ESP32 board.',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { title: 'Disconnect ESP32 hardware', readOnlyHint: false },
+      execute: disconnectBoard,
     },
   ]
 
