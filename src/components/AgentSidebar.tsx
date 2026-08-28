@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { getOrCreateRoomKey } from '../webmcp/room'
 import { generateCleanSerialSummary } from '../webmcp/tools'
 
+const MCP_URL = 'https://chip-mcp-server.onrender.com/mcp'
+
 interface AgentSidebarProps {
   open: boolean
   onClose: () => void
@@ -25,7 +27,15 @@ export function AgentSidebar({
   serialLogs = [],
 }: AgentSidebarProps) {
   const [roomKey] = useState(() => getOrCreateRoomKey())
+  const [copied, setCopied] = useState(false)
   const logEndRef = useRef<HTMLDivElement>(null)
+
+  const copyMcpUrl = () => {
+    navigator.clipboard.writeText(MCP_URL).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   const { cleanSummary } = generateCleanSerialSummary(serialLogs)
 
@@ -103,6 +113,30 @@ export function AgentSidebar({
           ))
         )}
         <div ref={logEndRef} />
+      </div>
+
+      {/* MCP Connection URL */}
+      <div className="px-4 py-3 border-t border-[#ebebeb] shrink-0">
+        <p className="text-[9px] uppercase font-semibold text-[#bbb] tracking-wider mb-1.5">Connect Agent</p>
+        <div className="flex items-center gap-1.5 bg-white border border-[#e5e5e5] rounded-lg px-2.5 py-1.5">
+          <span className="text-[9.5px] font-mono text-[#555] truncate flex-1 select-all">{MCP_URL}</span>
+          <button
+            onClick={copyMcpUrl}
+            title="Copy MCP URL"
+            className="shrink-0 text-[#bbb] hover:text-black transition-colors cursor-pointer"
+          >
+            {copied ? (
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
 
     </div>
