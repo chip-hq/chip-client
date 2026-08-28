@@ -22,7 +22,6 @@ import { HistoryView } from './components/HistoryView'
 import { setDashboardSnapshotProvider } from './webmcp/tools'
 import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
-import { WebMCPRoomPage } from './components/WebMCPRoomPage'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -110,15 +109,7 @@ function getFlashStage(progress: number): string {
   return 'Done'
 }
 
-// ── WebMCP room route detection ─────────────────────────────────────────────
-const IS_WEBMCP_ROOM = typeof window !== 'undefined' &&
-  (window.location.pathname.startsWith('/webmcp/rooms/') ||
-   window.location.search.includes('invite=agent'))
-
 export default function App() {
-  // Serve lightweight WebMCP agent page when Codex/Claude opens the room URL
-  if (IS_WEBMCP_ROOM) return <WebMCPRoomPage />
-
   const { user, loading, error, signIn, logOut } = useFirebaseAuth()
   const [alerts, setAlerts] = useState<AlertItem[]>([])
 
@@ -454,7 +445,14 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard')
   const [setupSubTab, setSetupSubTab] = useState<'webmcp' | 'mcp'>('webmcp')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [agentSidebarOpen, setAgentSidebarOpen] = useState(false)
+  const [agentSidebarOpen, setAgentSidebarOpen] = useState(true)
+
+  // Auto-open agent sidebar whenever an agent posts a message
+  useEffect(() => {
+    const handler = () => setAgentSidebarOpen(true)
+    window.addEventListener('chip:agent-message', handler)
+    return () => window.removeEventListener('chip:agent-message', handler)
+  }, [])
   const [activeConsoleTab, setActiveConsoleTab] = useState<'log' | 'preview'>('log')
   const [activeCompanionHtml, setActiveCompanionHtml] = useState<string | null>(null)
   const [activeCompanionTitle, setActiveCompanionTitle] = useState<string | null>(null)
