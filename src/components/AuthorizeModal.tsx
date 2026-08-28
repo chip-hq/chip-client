@@ -47,9 +47,10 @@ export function AuthorizeModal({ user, sessionId, backendUrl, mcpUrl }: Authoriz
         bOnline = false
       }
 
-      // 2. Check MCP Server
+      // 2. Check MCP Server (health is at root, not /mcp)
       try {
-        const mRes = await fetch(`${mcpUrl}/health`, { signal: AbortSignal.timeout(5000) })
+        const mcpBase = mcpUrl.replace(/\/mcp\/?$/, '')
+        const mRes = await fetch(`${mcpBase}/health`, { signal: AbortSignal.timeout(5000) })
         if (mRes.ok) {
           mOnline = true
         }
