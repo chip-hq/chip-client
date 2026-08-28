@@ -279,7 +279,26 @@ async function readDashboardState(): Promise<WebMCPToolResult> {
 // ── Agent Message Dispatcher ────────────────────────────────────────────────
 // Agents call this to push a message into the dashboard Live Digest sidebar.
 export function dispatchAgentMessage(text: string): void {
+  // 1. Local tab event
   window.dispatchEvent(new CustomEvent('chip:agent-message', { detail: { text } }))
+
+  // 2. Cross-tab BroadcastChannel (instant sync to other open tabs on same origin)
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('chip_agent_channel')
+      bc.postMessage({ type: 'chip:agent-message', text })
+      bc.close()
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Cross-tab Storage fallback
+  try {
+    localStorage.setItem('chip_last_agent_msg', JSON.stringify({ text, time: Date.now() }))
+  } catch {
+    // ignore
+  }
 }
 
 async function postAgentMessage(args?: { message?: string }): Promise<WebMCPToolResult> {

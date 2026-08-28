@@ -41,12 +41,47 @@ export function AgentSidebar({
   const { cleanSummary } = generateCleanSerialSummary(serialLogs)
 
   useEffect(() => {
-    const handler = (e: Event) => {
+    const handleLocal = (e: Event) => {
       const text = (e as CustomEvent<{ text: string }>).detail?.text
       if (text) setAgentMessages((prev) => [...prev, text])
     }
-    window.addEventListener('chip:agent-message', handler)
-    return () => window.removeEventListener('chip:agent-message', handler)
+
+    // 1. Local event
+    window.addEventListener('chip:agent-message', handleLocal)
+
+    // 2. Cross-tab BroadcastChannel
+    let bc: BroadcastChannel | null = null
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('chip_agent_channel')
+        bc.onmessage = (event) => {
+          if (event.data?.text) {
+            setAgentMessages((prev) => [...prev, event.data.text])
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 3. Storage event fallback
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'chip_last_agent_msg' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          if (parsed.text) setAgentMessages((prev) => [...prev, parsed.text])
+        } catch {
+          // ignore
+        }
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      window.removeEventListener('chip:agent-message', handleLocal)
+      window.removeEventListener('storage', handleStorage)
+      if (bc) bc.close()
+    }
   }, [])
 
   useEffect(() => {

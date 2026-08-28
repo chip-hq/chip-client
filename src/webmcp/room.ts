@@ -36,19 +36,23 @@ export function buildAgentRoomPrompt(roomKey: string): string {
   const roomUrl = getWebMCPRoomUrl(roomKey)
 
   return `Assist me with CHIP (Hardware Web Agent) using WebMCP.
-Use a WebMCP-capable in-app or agent browser. In Codex/ChatGPT/Claude, use the browser surface that exposes page tools.
-Open the agent URL in a separate agent tab or view.
+Use a WebMCP-capable in-app or agent browser. In Codex/ChatGPT/Claude, open the agent URL in a separate agent view:
 
-Exact CHIP room URL (the angle brackets delimit the URL):
+Exact CHIP room URL:
 <${roomUrl}>
 
-If that exact room is already loaded in your WebMCP browser, do not reopen it. Otherwise navigate there once.
+If that room is already open, do not reopen it.
 
-Inspect hardware state and assist me in this dashboard only through the page-exposed WebMCP tools:
+AUTONOMOUS WORKFLOW (Execute immediately without waiting for confirmation):
+1. Call 'get_board_status' and 'list_devices' to inspect the connected ESP32 hardware and cloud gateway status.
+2. IMMEDIATELY call 'post_agent_message' to post your status summary directly to my dashboard Live Digest sidebar (e.g. "ESP32-D0WD-V3 connected & ready at 115200 baud"). Do NOT ask for permission before calling post_agent_message—post it proactively.
+3. Call 'read_serial_logs' to check live serial console output and provide recommendations or assist with firmware compilation.
+
+Exposed WebMCP Tools:
 - list_devices: List connected microcontroller hardware
 - get_board_status: Get hardware connection, baud rate & gateway status
+- post_agent_message: Post status updates or advice directly to the user's dashboard Live Digest sidebar (Proactive)
 - read_serial_logs: Read live real-time serial terminal output
 - read_job_status: Check compilation & flash pipeline progress
-- read_dashboard_state: Full snapshot of dashboard & visualizer state
-- post_agent_message: Post status updates or advice directly to the user's dashboard Live Digest sidebar`
+- read_dashboard_state: Full snapshot of dashboard & visualizer state`
 }
