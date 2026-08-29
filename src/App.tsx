@@ -442,7 +442,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard')
   const [setupSubTab, setSetupSubTab] = useState<'webmcp' | 'mcp'>('webmcp')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [agentSidebarOpen, setAgentSidebarOpen] = useState(true)
+  const [agentSidebarOpen, setAgentSidebarOpen] = useState(false)
 
   // Auto-open agent sidebar whenever an agent posts a message
   useEffect(() => {
@@ -1489,7 +1489,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                       <path d="M8 13h6" />
                     </svg>
                     <span>WebMCP Direct Connection</span>
-                    <span className="text-[9px] font-mono bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full font-bold">ChatGPT & Claude</span>
                   </button>
                   <button
                     type="button"
@@ -1549,9 +1548,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                               }}
                               className="bg-white hover:bg-[#f3f3f3] text-black text-xs font-medium py-2 px-3 rounded-lg transition-colors cursor-pointer border border-[#e5e5e5] flex items-center justify-center gap-1.5"
                             >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                <path d="M14 11a5 5 0 0 0 7.54 7.07l1.71-1.71" />
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                               </svg>
                               <span>Copy Live Link</span>
                             </button>

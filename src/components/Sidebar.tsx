@@ -66,16 +66,11 @@ export function Sidebar({
             <img
               src={chipLogo}
               alt="Chip Logo"
-              className="w-7 h-7 object-contain rounded shrink-0 shadow-xs"
+              className="w-6 h-6 object-contain rounded shrink-0 shadow-xs"
             />
-            <div className="flex flex-col">
-              <span className="font-bold text-sm tracking-tight text-black leading-none font-mono">
-                CHIP
-              </span>
-              <span className="text-[10px] text-[#777777] font-mono leading-tight mt-0.5">
-                v1.0.0
-              </span>
-            </div>
+            <span className="font-semibold text-sm tracking-tight text-black">
+              Chip
+            </span>
           </div>
 
           {/* Navigation Items */}
