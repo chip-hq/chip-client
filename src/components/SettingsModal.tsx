@@ -158,7 +158,7 @@ export function SettingsModal({
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="bg-white border border-[#e5e5e5] rounded-xl w-[560px] h-[360px] shadow-xl flex overflow-hidden animate-in fade-in zoom-in-95 duration-150 select-none"
+        className="bg-white border border-[#e5e5e5] rounded-xl w-[640px] max-w-[95vw] h-[450px] max-h-[90vh] shadow-xl flex overflow-hidden animate-in fade-in zoom-in-95 duration-150 select-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Left Main Content Area */}
@@ -316,7 +316,7 @@ export function SettingsModal({
           </div>
 
           <div className="flex justify-between items-center pt-3 mt-3 text-[10px] text-[#888888] font-mono border-t border-[#f0f0f0]">
-            <span>Chip v1.0.0</span>
+            <span>Chip</span>
           </div>
         </div>
 
