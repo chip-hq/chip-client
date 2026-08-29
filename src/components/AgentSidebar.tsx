@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { getOrCreateRoomKey } from '../webmcp/room'
 import { generateCleanSerialSummary } from '../webmcp/tools'
 
 const MCP_URL = 'https://chip-mcp-server.onrender.com/mcp'
@@ -44,7 +43,6 @@ export function AgentSidebar({
   cloudConnected,
   serialLogs = [],
 }: AgentSidebarProps) {
-  const [roomKey] = useState(() => getOrCreateRoomKey())
   const [copied, setCopied] = useState(false)
   const [agentMessages, setAgentMessages] = useState<string[]>([])
   const [agentNote, setAgentNote] = useState<string | null>(null)
@@ -187,7 +185,7 @@ export function AgentSidebar({
           {cloudConnected ? 'gateway ●' : 'gateway ○'}
         </span>
         <span className="text-[10px] font-mono px-1.5 py-0.5 bg-[#f3f3f3] border border-[#e5e5e5] rounded text-[#555]">
-          {roomKey}
+          webmcp ●
         </span>
       </div>
 

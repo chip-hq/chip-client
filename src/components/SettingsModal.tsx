@@ -22,7 +22,7 @@ const WEBMCP_COMMANDS = [
   {
     name: 'get_board_status',
     access: 'Read-only',
-    description: 'Read chip model, baud rate, board status, gateway status, and room key.',
+    description: 'Read chip model, baud rate, board status, and gateway status.',
   },
   {
     name: 'read_serial_logs',

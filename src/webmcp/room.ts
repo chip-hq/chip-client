@@ -1,47 +1,23 @@
 /**
- * WebMCP Room & Prompt Helper for CHIP Dashboard
- * Generates room session IDs and formats agent prompt copy text.
+ * WebMCP Prompt & URL Helper for CHIP Dashboard
+ * Formats live dashboard URL and agent prompt copy text.
  */
 
-export function getOrCreateRoomKey(): string {
-  if (typeof window === 'undefined') return 'chip-room-527RR'
-
-  // Check URL query search param `?room=...` or hash
-  const searchParams = new URLSearchParams(window.location.search)
-  const roomQuery = searchParams.get('room')
-  if (roomQuery) return roomQuery
-
-  // Check sessionStorage
-  const stored = sessionStorage.getItem('chip_webmcp_room_key')
-  if (stored) return stored
-
-  // Generate a random 5-character room ID (similar to 527RR in MCPencil)
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let randomId = ''
-  for (let i = 0; i < 5; i++) {
-    randomId += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  const roomKey = `chip-room-${randomId}`
-  sessionStorage.setItem('chip_webmcp_room_key', roomKey)
-  return roomKey
+export function getWebMCPUrl(): string {
+  if (typeof window === 'undefined') return 'https://chip-mocha.vercel.app/'
+  return window.location.origin
 }
 
-export function getWebMCPRoomUrl(roomKey: string): string {
-  if (typeof window === 'undefined') return `https://chip-mocha.vercel.app/?room=${roomKey}&invite=agent#webmcp`
-  const origin = window.location.origin
-  return `${origin}/?room=${roomKey}&invite=agent#webmcp`
-}
-
-export function buildAgentRoomPrompt(roomKey: string): string {
-  const roomUrl = getWebMCPRoomUrl(roomKey)
+export function buildAgentPrompt(): string {
+  const liveUrl = getWebMCPUrl()
 
   return `Assist me with CHIP (Hardware Web Agent) using WebMCP.
 Use a WebMCP-capable in-app or agent browser. In Codex/ChatGPT/Claude, open the agent URL in a separate agent view:
 
-Exact CHIP room URL:
-<${roomUrl}>
+Exact CHIP live URL:
+<${liveUrl}>
 
-If that room is already open, do not reopen it.
+If that URL is already open, do not reopen it.
 
 AUTONOMOUS WORKFLOW (Execute immediately without waiting for confirmation):
 1. Call 'get_board_status' and 'list_devices' to inspect the connected ESP32 hardware and cloud gateway status.
@@ -60,3 +36,8 @@ Exposed WebMCP Tools:
 - read_job_status: Check compilation & flash pipeline progress
 - read_dashboard_state: Full snapshot of dashboard & visualizer state`
 }
+
+// Backward-compatibility aliases
+export const getWebMCPRoomUrl = (_roomKey?: string) => getWebMCPUrl()
+export const buildAgentRoomPrompt = (_roomKey?: string) => buildAgentPrompt()
+export const getOrCreateRoomKey = () => ''

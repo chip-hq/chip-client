@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from '../webmcp/room'
+import { buildAgentPrompt, getWebMCPUrl } from '../webmcp/room'
 import { generateCleanSerialSummary } from '../webmcp/tools'
 import { type AlertType } from './AlertToast'
 
@@ -25,28 +25,27 @@ export function DashAssist({
   const [isOpen, setIsOpen] = useState(true)
   const [copiedPrompt, setCopiedPrompt] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
-  const [roomKey] = useState(() => getOrCreateRoomKey())
 
   // Automatically expand speech bubble when board connects or disconnects
   useEffect(() => {
     setIsOpen(true)
   }, [boardConnected])
 
-  const roomUrl = getWebMCPRoomUrl(roomKey)
-  const agentPromptText = buildAgentRoomPrompt(roomKey)
+  const liveUrl = getWebMCPUrl()
+  const agentPromptText = buildAgentPrompt()
   const { cleanSummary } = generateCleanSerialSummary(serialLogs)
 
   const handleCopyPrompt = () => {
     navigator.clipboard.writeText(agentPromptText)
     setCopiedPrompt(true)
-    showAlert('success', 'Agent Room Prompt with link & key copied to clipboard! Paste into ChatGPT or Claude.', 'Prompt Copied')
+    showAlert('success', 'Agent prompt copied to clipboard! Paste into ChatGPT or Claude.', 'Prompt Copied')
     setTimeout(() => setCopiedPrompt(false), 3000)
   }
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(roomUrl)
+    navigator.clipboard.writeText(liveUrl)
     setCopiedLink(true)
-    showAlert('success', 'Live WebMCP Room URL copied!', 'URL Copied')
+    showAlert('success', 'Live WebMCP URL copied!', 'URL Copied')
     setTimeout(() => setCopiedLink(false), 3000)
   }
 
@@ -87,7 +86,7 @@ export function DashAssist({
           <div className="flex items-center justify-between pb-3 border-b border-[#f0f0f0] mb-3">
             <div>
               <h4 className="text-xs font-semibold text-black tracking-tight">DashAssist Assistant</h4>
-              <p className="text-[10px] text-[#777777]">Interactive WebMCP Room Guidance & Live AI Digest</p>
+              <p className="text-[10px] text-[#777777]">Interactive WebMCP Guidance & Live AI Digest</p>
             </div>
             <button
               onClick={() => setIsOpen(false)}
@@ -139,7 +138,7 @@ export function DashAssist({
 
                 <div className="pt-1 flex items-center gap-2 text-[10px] text-[#666]">
                   <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-mono font-medium">Baud: {baudRate}</span>
-                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-mono font-medium">Room: {roomKey}</span>
+                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-mono font-medium">WebMCP Live</span>
                   <span className={`px-1.5 py-0.5 rounded font-mono font-medium ${cloudConnected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
                     {cloudConnected ? 'Gateway Online' : 'Offline'}
                   </span>
@@ -151,8 +150,8 @@ export function DashAssist({
           {/* Copy Prompt & Link Buttons Section */}
           <div className="space-y-2 mb-3.5">
             <div className="flex items-center justify-between text-[11px] font-medium text-[#444]">
-              <span>WebMCP Room Prompt</span>
-              <span className="text-[10px] font-mono text-amber-700 font-semibold">{roomKey}</span>
+              <span>WebMCP Agent Prompt</span>
+              <span className="text-[10px] font-mono text-emerald-700 font-semibold">Live URL</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -174,7 +173,7 @@ export function DashAssist({
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                     </svg>
-                    <span>Copy Agent Room Prompt</span>
+                    <span>Copy Agent Prompt</span>
                   </>
                 )}
               </button>
@@ -182,7 +181,7 @@ export function DashAssist({
               <button
                 type="button"
                 onClick={handleCopyLink}
-                title="Copy WebMCP Room Link"
+                title="Copy Live WebMCP Link"
                 className="bg-[#f0f0f0] hover:bg-[#e4e4e4] text-black text-xs font-medium p-2 rounded-lg transition-colors cursor-pointer border border-[#e5e5e5]"
               >
                 {copiedLink ? (

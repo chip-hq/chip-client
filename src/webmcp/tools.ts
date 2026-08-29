@@ -27,7 +27,6 @@ export interface DashboardSnapshot {
   agentConnected: boolean
   userEmail: string | null
   companionEnabled: boolean
-  roomKey: string
   agentNote: string | null
 }
 
@@ -40,7 +39,6 @@ let snapshotProvider: () => DashboardSnapshot = () => ({
   agentConnected: false,
   userEmail: null,
   companionEnabled: true,
-  roomKey: 'chip-default-room',
   agentNote: null,
 })
 
@@ -121,7 +119,6 @@ async function getBoardStatus(): Promise<WebMCPToolResult> {
             baudRate: primary ? primary.baud : 115200,
             cloudGatewayConnected: snapshot.cloudConnected || !!(primary && primary.connected),
             agentOAuthConnected: snapshot.agentConnected,
-            roomKey: snapshot.roomKey,
             agentNote: snapshot.agentNote,
           },
           null,
@@ -269,7 +266,6 @@ async function readDashboardState(): Promise<WebMCPToolResult> {
         text: JSON.stringify(
           {
             user: snapshot.userEmail || 'Anonymous User',
-            roomKey: snapshot.roomKey,
             boardCount: snapshot.devices.length,
             boardConnected: snapshot.devices.some((d) => d.connected),
             cloudGatewayConnected: snapshot.cloudConnected,
@@ -528,7 +524,7 @@ export function registerWebMCPTools(): void {
     },
     {
       name: 'read_dashboard_state',
-      description: 'Get full snapshot of the CHIP dashboard session state including user email, room key, and hardware visualizer status. Read-only.',
+      description: 'Get full snapshot of the CHIP dashboard session state including user email, hardware connection, and visualizer status. Read-only.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { title: 'Read full dashboard state snapshot', readOnlyHint: true },
       execute: readDashboardState,

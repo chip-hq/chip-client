@@ -17,7 +17,7 @@ import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
 import { setDashboardActionProvider, setDashboardSnapshotProvider } from './webmcp/tools'
-import { getOrCreateRoomKey, buildAgentRoomPrompt, getWebMCPRoomUrl } from './webmcp/room'
+import { buildAgentPrompt, getWebMCPUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
 import './App.css'
 
@@ -583,8 +583,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const busy = status === 'connecting' || status === 'flashing'
   const connected = status === 'connected' || status === 'flashing' || status === 'done'
 
-  const [roomKey] = useState(() => getOrCreateRoomKey())
-
   // Feed live board & dashboard snapshot state to the WebMCP tools
   useEffect(() => {
     setDashboardSnapshotProvider(() => ({
@@ -605,10 +603,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       agentConnected,
       userEmail: email || null,
       companionEnabled,
-      roomKey,
       agentNote,
     }))
-  }, [chip, status, connected, baud, log, activeJob, cloudConnected, agentConnected, email, companionEnabled, roomKey, agentNote])
+  }, [chip, status, connected, baud, log, activeJob, cloudConnected, agentConnected, email, companionEnabled, agentNote])
 
   useEffect(() => {
     const handleAgentNote = (event: Event) => {
@@ -1494,7 +1491,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                       <path d="M8 9h8" />
                       <path d="M8 13h6" />
                     </svg>
-                    <span>WebMCP In-App Room</span>
+                    <span>WebMCP Direct Connection</span>
                     <span className="text-[9px] font-mono bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full font-bold">ChatGPT & Claude</span>
                   </button>
                   <button
@@ -1515,7 +1512,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                   </button>
                 </div>
 
-                {/* SUB-TAB 1: WebMCP In-App Room Connection */}
+                {/* SUB-TAB 1: WebMCP Direct Agent Connection */}
                 {setupSubTab === 'webmcp' && (
                   <div className="space-y-3 max-w-xl animate-in fade-in-50 duration-150 pt-2">
                     {/* Step 1 */}
@@ -1525,22 +1522,18 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                         <div className="w-px flex-1 bg-[#e5e5e5] mt-1.5 mb-1.5" />
                       </div>
                       <div className="pb-5 min-w-0 w-full">
-                        <p className="text-[13px] font-semibold text-black leading-tight mb-1">Copy the WebMCP Agent Room Prompt</p>
+                        <p className="text-[13px] font-semibold text-black leading-tight mb-1">Copy the WebMCP Agent Prompt</p>
                         <p className="text-[12px] text-[#666666] leading-relaxed mb-3">
-                          Copy the formatted room prompt and paste it into ChatGPT or Claude Web. The AI agent will enter this dashboard room and assist you directly.
+                          Copy the formatted agent prompt and paste it into ChatGPT or Claude Web. The AI agent will open your live dashboard and assist you directly.
                         </p>
                         <div className="bg-[#f8f8f8] border border-[#e5e5e5] rounded-xl p-3 space-y-2.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-[#666] font-medium">Session Key:</span>
-                            <span className="font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">{roomKey}</span>
-                          </div>
                           <div className="flex flex-col sm:flex-row gap-2">
                             <button
                               type="button"
                               onClick={() => {
-                                const prompt = buildAgentRoomPrompt(roomKey)
+                                const prompt = buildAgentPrompt()
                                 navigator.clipboard.writeText(prompt)
-                                showAlert('success', 'Agent Room Prompt copied! Paste into ChatGPT or Claude.', 'Prompt Copied')
+                                showAlert('success', 'Agent prompt copied! Paste into ChatGPT or Claude.', 'Prompt Copied')
                               }}
                               className="flex-1 bg-black hover:bg-[#222222] text-white text-xs font-medium py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                             >
@@ -1548,14 +1541,14 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                               </svg>
-                              <span>Copy Agent Room Prompt</span>
+                              <span>Copy Agent Prompt</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => {
-                                const url = getWebMCPRoomUrl(roomKey)
+                                const url = getWebMCPUrl()
                                 navigator.clipboard.writeText(url)
-                                showAlert('success', 'WebMCP Room Link copied!', 'Link Copied')
+                                showAlert('success', 'Live WebMCP Link copied!', 'Link Copied')
                               }}
                               className="bg-white hover:bg-[#f3f3f3] text-black text-xs font-medium py-2 px-3 rounded-lg transition-colors cursor-pointer border border-[#e5e5e5] flex items-center justify-center gap-1.5"
                             >
@@ -1563,7 +1556,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                                 <path d="M14 11a5 5 0 0 0 7.54 7.07l1.71-1.71" />
                               </svg>
-                              <span>Copy Room Link</span>
+                              <span>Copy Live Link</span>
                             </button>
                           </div>
                         </div>
