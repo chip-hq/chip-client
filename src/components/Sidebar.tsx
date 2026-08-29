@@ -12,6 +12,7 @@ interface SidebarProps {
   onOpenSettings?: () => void
   cloudConnected: boolean
   agentConnected?: boolean
+  onDisconnectAgent?: () => void
   isMobileOpen: boolean
   setIsMobileOpen: (open: boolean) => void
 }
@@ -24,6 +25,7 @@ export function Sidebar({
   onOpenSettings,
   cloudConnected,
   agentConnected = false,
+  onDisconnectAgent,
   isMobileOpen,
   setIsMobileOpen,
 }: SidebarProps) {
@@ -45,51 +47,50 @@ export function Sidebar({
 
   return (
     <>
-      {/* Mobile backdrop overlay */}
+      {/* Mobile Drawer Overlay */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          className="fixed inset-0 bg-black/40 z-40 md:hidden animate-in fade-in duration-200"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
 
+      {/* Main Sidebar Wrapper */}
       <aside
-        className={`
-          fixed md:static inset-y-0 left-0 z-50
-          w-60 bg-[#f5f5f5] border-r border-[#e5e5e5] flex flex-col justify-between p-3.5 select-none
-          transition-transform duration-200 ease-in-out shrink-0 h-full
-          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-        `}
+        className={`fixed md:static inset-y-0 left-0 z-50 w-56 bg-[#f5f5f5] flex flex-col justify-between p-4 transform transition-transform duration-200 ease-in-out select-none shrink-0 ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        }`}
       >
-        <div className="space-y-5">
-          {/* Top Branding */}
-          <div className="flex items-center justify-between px-1.5 pt-1">
-            <div className="flex items-center gap-2.5">
-              <img src={chipLogo} alt="Chip Logo" className="w-5 h-5 rounded object-contain shadow-xs" />
-              <span className="font-semibold text-sm tracking-tight text-black">Chip</span>
+        {/* Top Section: Brand + Navigation + Connected Agents */}
+        <div className="space-y-6">
+          {/* App Brand Header */}
+          <div className="flex items-center gap-2.5 px-2">
+            <img
+              src={chipLogo}
+              alt="Chip Logo"
+              className="w-7 h-7 object-contain rounded shrink-0 shadow-xs"
+            />
+            <div className="flex flex-col">
+              <span className="font-bold text-sm tracking-tight text-black leading-none font-mono">
+                CHIP
+              </span>
+              <span className="text-[10px] text-[#777777] font-mono leading-tight mt-0.5">
+                v1.0.0
+              </span>
             </div>
-            <button
-              className="text-[#888888] hover:text-black p-1 rounded md:hidden"
-              onClick={() => setIsMobileOpen(false)}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="space-y-1 text-[13px]">
+          {/* Navigation Items */}
+          <nav className="space-y-1">
             <button
               onClick={() => { onSelectTab('dashboard'); setIsMobileOpen(false) }}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 font-medium text-left rounded transition-colors cursor-pointer ${
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
                 currentTab === 'dashboard'
-                  ? 'text-black bg-[#ebebeb]'
-                  : 'text-[#666666] hover:bg-[#eaeaea] hover:text-black'
+                  ? 'bg-[#ebebeb] text-black font-semibold'
+                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
               }`}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect width="7" height="9" x="3" y="3" rx="1" />
                 <rect width="7" height="5" x="14" y="3" rx="1" />
                 <rect width="7" height="9" x="14" y="12" rx="1" />
@@ -100,13 +101,13 @@ export function Sidebar({
 
             <button
               onClick={() => { onSelectTab('history'); setIsMobileOpen(false) }}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 font-medium text-left rounded transition-colors cursor-pointer ${
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
                 currentTab === 'history'
-                  ? 'text-black bg-[#ebebeb]'
-                  : 'text-[#666666] hover:bg-[#eaeaea] hover:text-black'
+                  ? 'bg-[#ebebeb] text-black font-semibold'
+                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
               }`}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
               </svg>
@@ -115,17 +116,17 @@ export function Sidebar({
 
             <button
               onClick={() => { onSelectTab('setup'); setIsMobileOpen(false) }}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 font-medium text-left rounded transition-colors cursor-pointer ${
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
                 currentTab === 'setup'
-                  ? 'text-black bg-[#ebebeb]'
-                  : 'text-[#666666] hover:bg-[#eaeaea] hover:text-black'
+                  ? 'bg-[#ebebeb] text-black font-semibold'
+                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
               }`}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
-              <span>Setup</span>
+              <span>Setup Guide</span>
             </button>
           </nav>
 
@@ -153,14 +154,23 @@ export function Sidebar({
                   </svg>
                   <span className="font-medium text-black">MCP Server</span>
                 </div>
-                <span className={`text-[10px] font-semibold flex items-center gap-1 ${
-                  agentConnected ? 'text-[#16a34a]' : 'text-[#b45309]'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    agentConnected ? 'bg-[#16a34a]' : 'bg-[#b45309]'
-                  }`} />
-                  {agentConnected ? 'Connected' : 'Not connected'}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[10px] font-semibold ${
+                    agentConnected ? 'text-[#16a34a]' : 'text-[#b45309]'
+                  }`}>
+                    {agentConnected ? 'Connected' : 'Not connected'}
+                  </span>
+                  {agentConnected && onDisconnectAgent && (
+                    <button
+                      type="button"
+                      onClick={onDisconnectAgent}
+                      title="Disconnect agent session"
+                      className="text-[9px] text-[#999999] hover:text-[#dc2626] underline cursor-pointer"
+                    >
+                      Disconnect
+                    </button>
+                  )}
+                </div>
               </div>
               <p className="text-[11px] text-[#888888] leading-tight pl-4">
                 Universal Model Context Protocol.
@@ -179,8 +189,7 @@ export function Sidebar({
               </svg>
               <span className="text-[#666666]">Cloud Gateway</span>
             </div>
-            <span className={`font-semibold flex items-center gap-1 ${cloudConnected ? 'text-[#16a34a]' : 'text-[#888888]'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${cloudConnected ? 'bg-[#16a34a]' : 'bg-[#888888]'}`} />
+            <span className={`font-semibold ${cloudConnected ? 'text-[#16a34a]' : 'text-[#888888]'}`}>
               {cloudConnected ? 'Online' : 'Offline'}
             </span>
           </div>

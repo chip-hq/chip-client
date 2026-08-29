@@ -505,6 +505,17 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     return () => clearInterval(interval)
   }, [uid])
 
+  const handleDisconnectAgent = useCallback(async () => {
+    try {
+      setAgentConnected(false)
+      localStorage.removeItem('chip_agent_connected')
+      await fetch(`${BACKEND_URL}/api/agents/disconnect?userId=${uid}`, { method: 'POST' })
+      showAlert('info', 'Agent connection revoked and reset to disconnected.', 'Agent Disconnected')
+    } catch {
+      // non-fatal
+    }
+  }, [uid, showAlert])
+
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
@@ -1236,6 +1247,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         onOpenSettings={() => setSettingsOpen(true)}
         cloudConnected={cloudConnected}
         agentConnected={agentConnected}
+        onDisconnectAgent={handleDisconnectAgent}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
       />
@@ -1305,13 +1317,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
               <span>Agent</span>
-              {agentConnected && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              )}
             </button>
 
             <span className={`text-[11px] px-2 py-0.5 border border-[#e5e5e5] bg-white font-mono rounded ${cloudConnected ? 'text-[#16a34a] font-medium' : 'text-[#888888]'}`}>
-              {cloudConnected ? '● Cloud Online' : '○ Cloud Offline'}
+              {cloudConnected ? 'Cloud Online' : 'Cloud Offline'}
             </span>
           </div>
         </header>

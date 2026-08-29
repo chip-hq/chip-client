@@ -182,10 +182,10 @@ export function AgentSidebar({
           {baudRate}
         </span>
         <span className="text-[10px] font-mono px-1.5 py-0.5 bg-[#f3f3f3] border border-[#e5e5e5] rounded text-[#555]">
-          {cloudConnected ? 'gateway ●' : 'gateway ○'}
+          {cloudConnected ? 'gateway online' : 'gateway offline'}
         </span>
         <span className="text-[10px] font-mono px-1.5 py-0.5 bg-[#f3f3f3] border border-[#e5e5e5] rounded text-[#555]">
-          webmcp ●
+          webmcp active
         </span>
       </div>
 
