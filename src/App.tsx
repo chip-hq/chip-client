@@ -872,24 +872,22 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             // ignore post-flash reset error
           }
         } else {
+          try {
+            if (loaderRef.current) {
+              await loaderRef.current.after('no_reset')
+            }
+          } catch {
+            // ignore
+          }
           pushLine('[FLASH] Flash completed! Please press the EN / Reset button on your board to start.')
           showAlert('info', 'Please press the EN / Reset button on your board to start your new sketch.', 'Press EN Button')
         }
 
         // Continuously drain transport buffer to capture Serial.println output and feed the companion
         try {
-          const transport = transportRef.current
-          if (transport) {
-            await transport.setDTR(false)
-            await transport.setRTS(true)
-            await new Promise((r) => setTimeout(r, 150))
-            await transport.setDTR(false)
-            await transport.setRTS(false)
-
-            startSerialDrain()
-          }
+          startSerialDrain()
         } catch {
-          // ignore post-flash reset error
+          // ignore post-flash drain error
         }
 
         if (jobId) {
