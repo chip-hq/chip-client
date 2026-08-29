@@ -505,17 +505,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     return () => clearInterval(interval)
   }, [uid])
 
-  const handleDisconnectAgent = useCallback(async () => {
-    try {
-      setAgentConnected(false)
-      localStorage.removeItem('chip_agent_connected')
-      await fetch(`${BACKEND_URL}/api/agents/disconnect?userId=${uid}`, { method: 'POST' })
-      showAlert('info', 'Agent connection revoked and reset to disconnected.', 'Agent Disconnected')
-    } catch {
-      // non-fatal
-    }
-  }, [uid, showAlert])
-
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
@@ -1247,7 +1236,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         onOpenSettings={() => setSettingsOpen(true)}
         cloudConnected={cloudConnected}
         agentConnected={agentConnected}
-        onDisconnectAgent={handleDisconnectAgent}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
       />

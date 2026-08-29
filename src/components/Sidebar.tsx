@@ -12,7 +12,6 @@ interface SidebarProps {
   onOpenSettings?: () => void
   cloudConnected: boolean
   agentConnected?: boolean
-  onDisconnectAgent?: () => void
   isMobileOpen: boolean
   setIsMobileOpen: (open: boolean) => void
 }
@@ -25,7 +24,6 @@ export function Sidebar({
   onOpenSettings,
   cloudConnected,
   agentConnected = false,
-  onDisconnectAgent,
   isMobileOpen,
   setIsMobileOpen,
 }: SidebarProps) {
@@ -154,23 +152,11 @@ export function Sidebar({
                   </svg>
                   <span className="font-medium text-black">MCP Server</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-[10px] font-semibold ${
-                    agentConnected ? 'text-[#16a34a]' : 'text-[#b45309]'
-                  }`}>
-                    {agentConnected ? 'Connected' : 'Not connected'}
-                  </span>
-                  {agentConnected && onDisconnectAgent && (
-                    <button
-                      type="button"
-                      onClick={onDisconnectAgent}
-                      title="Disconnect agent session"
-                      className="text-[9px] text-[#999999] hover:text-[#dc2626] underline cursor-pointer"
-                    >
-                      Disconnect
-                    </button>
-                  )}
-                </div>
+                <span className={`text-[10px] font-semibold ${
+                  agentConnected ? 'text-[#16a34a]' : 'text-[#b45309]'
+                }`}>
+                  {agentConnected ? 'Connected' : 'Not connected'}
+                </span>
               </div>
               <p className="text-[11px] text-[#888888] leading-tight pl-4">
                 Universal Model Context Protocol.
