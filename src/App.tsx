@@ -24,8 +24,8 @@ import './App.css'
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
 const BAUD_RATES = [9600, 74880, 115200, 230400, 460800, 921600]
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://chip-backend-production-fe14.up.railway.app'
-const MCP_URL = (import.meta.env.VITE_MCP_URL || 'https://chip-mcp-server.onrender.com').replace(/\/+$/, '') + '/mcp'
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || 'https://chip-backend.up.railway.app').replace(/\/+$/, '')
+const MCP_URL = (import.meta.env.VITE_MCP_URL || 'https://chip-mcp-server.up.railway.app').replace(/\/+$/, '') + '/mcp'
 const WS_URL = BACKEND_URL.replace(/^http/, 'ws')
 
 // ── Domain types ────────────────────────────────────────────────────────────

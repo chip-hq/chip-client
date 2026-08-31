@@ -69,7 +69,7 @@ async function getLiveDevices(): Promise<ChipDevice[]> {
 
   // Fallback: Query live cloud gateway for devices registered in this user/backend session
   try {
-    const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'https://chip-backend-production-fe14.up.railway.app').replace(/\/+$/, '')
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'https://chip-backend.up.railway.app').replace(/\/+$/, '')
     const res = await fetch(`${backendUrl}/api/devices`)
     if (res.ok) {
       const data = await res.json()

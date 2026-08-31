@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { generateCleanSerialSummary } from '../webmcp/tools'
 
-const MCP_URL = 'https://chip-mcp-server.onrender.com/mcp'
+const MCP_URL = (import.meta.env.VITE_MCP_URL || 'https://chip-mcp-server.up.railway.app').replace(/\/+$/, '') + '/mcp'
 const MAX_DIGEST_ITEMS = 30
 
 interface AgentActionRequest {
