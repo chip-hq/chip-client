@@ -19,6 +19,7 @@ import { HistoryView } from './components/HistoryView'
 import { setDashboardActionProvider, setDashboardSnapshotProvider } from './webmcp/tools'
 import { buildAgentPrompt, getWebMCPUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
+import { CircuitViewer } from './circuit'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -927,14 +928,21 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   useEffect(() => {
     let ws: WebSocket | null = null
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null
+    let disposed = false
 
     function connectWs() {
+      if (disposed) return
       try {
         const query = uid ? `?userId=${encodeURIComponent(uid)}&email=${encodeURIComponent(email || '')}` : ''
         ws = new WebSocket(`${WS_URL}${query}`)
         wsRef.current = ws
 
         ws.onopen = () => {
+          if (disposed) {
+            ws?.close()
+            return
+          }
           setCloudConnected(true)
           ws?.send(
             JSON.stringify({
@@ -947,11 +955,27 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               email,
             })
           )
+          // Keepalive — Railway drops idle sockets ~60s without traffic
+          if (heartbeatInterval) clearInterval(heartbeatInterval)
+          heartbeatInterval = setInterval(() => {
+            if (ws?.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'ping', t: Date.now() }))
+            }
+          }, 25_000)
         }
 
         ws.onmessage = async (event) => {
+          if (disposed) return
           try {
             const msg = JSON.parse(event.data) as FlashPayloadMessage | { type: string; jobId?: string; phase?: JobPhase }
+
+            if (msg.type === 'ping') {
+              ws?.send(JSON.stringify({ type: 'pong', t: Date.now() }))
+              return
+            }
+            if (msg.type === 'pong' || msg.type === 'registered') {
+              return
+            }
 
             if (msg.type === 'job_started' && msg.jobId && msg.phase) {
               startJobPoll(msg.jobId, msg.phase)
@@ -981,6 +1005,11 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
         ws.onclose = () => {
           setCloudConnected(false)
+          if (heartbeatInterval) {
+            clearInterval(heartbeatInterval)
+            heartbeatInterval = null
+          }
+          if (disposed) return
           reconnectTimeout = setTimeout(connectWs, 3000)
         }
 
@@ -996,8 +1025,17 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     connectWs()
 
     return () => {
+      disposed = true
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
-      if (ws) ws.close()
+      if (heartbeatInterval) clearInterval(heartbeatInterval)
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.close()
+      } else if (ws?.readyState === WebSocket.CONNECTING) {
+        ws.onmessage = null
+        ws.onerror = null
+        ws.onclose = null
+        ws.onopen = () => ws?.close()
+      }
     }
   }, [uid, email, pushLine, startJobPoll, showAlert])
 
@@ -1268,7 +1306,15 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               </svg>
             </button>
             <span className="text-xs font-semibold text-black tracking-tight capitalize">
-              {currentTab === 'history' ? 'Job History' : currentTab === 'manual' ? 'Manual Flash' : currentTab === 'setup' ? 'Setup' : 'Dashboard'}
+              {currentTab === 'circuit'
+                ? 'Circuit Studio'
+                : currentTab === 'history'
+                ? 'Job History'
+                : currentTab === 'manual'
+                ? 'Manual Flash'
+                : currentTab === 'setup'
+                ? 'Setup'
+                : 'Dashboard'}
             </span>
           </div>
 
@@ -1314,8 +1360,17 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
         {/* Scrollable Body + Agent Sidebar */}
         <div className="flex flex-1 overflow-hidden">
-          <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5]">
+          {/* TAB: CIRCUIT STUDIO — full-bleed, no padding, fills remaining viewport */}
+          {currentTab === 'circuit' && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
+              <CircuitViewer projectId="project-1" />
+            </div>
+          )}
+
+          <main className={`flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5] ${currentTab === 'circuit' ? 'hidden' : ''}`}>
           <div className="max-w-5xl mx-auto space-y-4 pb-12">
+            {/* TAB: CIRCUIT STUDIO placeholder (rendered above) */}
+
             {/* TAB 1: MAIN AUTOMATED AGENT DASHBOARD */}
             {currentTab === 'dashboard' && (
               <>
@@ -1703,7 +1758,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             )}
 
             {/* Log Console & Live Companion Preview (Dashboard & Manual tabs) */}
-            {currentTab !== 'history' && currentTab !== 'setup' && (
+            {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'circuit' && (
               <section className="card">
                 <div className="loghead">
                   <div className="flex items-center gap-2">
