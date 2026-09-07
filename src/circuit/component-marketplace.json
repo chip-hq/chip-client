@@ -1,0 +1,17 @@
+[
+  { "id": "esp32-wroom-32", "category": "Controllers", "icon": "MCU", "name": "ESP32-WROOM-32", "type": "controller", "lib": "RF_Module", "value": "ESP32-WROOM-32", "description": "Wi-Fi and Bluetooth microcontroller" },
+  { "id": "arduino-nano", "category": "Controllers", "icon": "MCU", "name": "Arduino Nano", "type": "controller", "lib": "MCU_Microchip_ATmega", "value": "ATmega328P-AU", "description": "Compact ATmega328P development board" },
+  { "id": "interval-timer", "category": "Triggers", "icon": "TIME", "name": "Interval Timer", "type": "timer", "lib": "Timer", "value": "Interval Timer", "description": "Start a flow on a repeating interval", "params": { "rate": "2000ms" } },
+  { "id": "pir-motion", "category": "Sensors", "icon": "MOTION", "name": "PIR Motion Sensor", "type": "pir", "lib": "Sensor", "value": "PIR Motion", "description": "Digital motion interrupt input", "params": { "pin": "GPIO 14" } },
+  { "id": "dht22", "category": "Sensors", "icon": "TEMP", "name": "DHT22 Temperature & Humidity", "type": "dht22", "lib": "Sensor", "value": "DHT22", "description": "Digital temperature and humidity sensor", "params": { "pin": "GPIO 4" } },
+  { "id": "ldr", "category": "Sensors", "icon": "LIGHT", "name": "LDR Photoresistor", "type": "ldr", "lib": "Device", "value": "LDR", "description": "Analog light-level sensor", "params": { "pin": "GPIO 34" } },
+  { "id": "threshold", "category": "Logic", "icon": "LOGIC", "name": "Threshold Condition", "type": "threshold", "lib": "Logic", "value": "Threshold", "description": "Branch when a reading crosses a limit", "params": { "threshold": 28 } },
+  { "id": "relay-5v", "category": "Outputs", "icon": "RELAY", "name": "5V Relay Module", "type": "relay", "lib": "Relay", "value": "5V Relay", "description": "Switch mains or high-current loads", "params": { "pin": "GPIO 26" } },
+  { "id": "status-led", "category": "Outputs", "icon": "LED", "name": "Status LED", "type": "led", "lib": "Device", "value": "LED", "description": "Visual digital output", "params": { "pin": "GPIO 2" } },
+  { "id": "piezo-buzzer", "category": "Outputs", "icon": "BEEP", "name": "Piezo Buzzer", "type": "buzzer", "lib": "Device", "value": "Piezo Buzzer", "description": "Audible alarm output", "params": { "pin": "GPIO 15" } },
+  { "id": "vibration-motor", "category": "Outputs", "icon": "VIBE", "name": "Vibration Motor", "type": "vibration", "lib": "Motor", "value": "Vibration Motor", "description": "Haptic feedback output", "params": { "pin": "GPIO 13" } },
+  { "id": "ssd1306-oled", "category": "Displays", "icon": "OLED", "name": "SSD1306 OLED Display", "type": "oled", "lib": "Display_Graphic", "value": "SSD1306", "description": "128x64 I2C status display", "params": { "sda": 21, "scl": 22 } },
+  { "id": "resistor", "category": "Passives", "icon": "R", "name": "Resistor", "type": "resistor", "lib": "Device", "value": "220R", "description": "Current limiting or pull-up resistor" },
+  { "id": "capacitor", "category": "Passives", "icon": "C", "name": "Capacitor", "type": "capacitor", "lib": "Device", "value": "100nF", "description": "Decoupling or filtering capacitor" },
+  { "id": "pushbutton", "category": "Inputs", "icon": "SW", "name": "Pushbutton", "type": "button", "lib": "Switch", "value": "SW_Push", "description": "Manual digital input", "params": { "pin": "GPIO 14" } }
+]

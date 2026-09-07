@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   circuitChatApi,
-  listProjectsApi,
   fetchCircuitModelsApi,
-  createProjectApi,
   type ChatMessage,
   type CircuitActionResult,
 } from '../circuit/api'
@@ -30,13 +28,20 @@ interface MessageItem {
   timestamp: Date
 }
 
-const QUICK_PROMPTS = [
-  'Add an ESP32 with an LED on GPIO 2 and 220Ω resistor to GND',
-  'Add a DHT22 temperature sensor on GPIO 4 and a 5V relay on GPIO 26',
-  'Add an I2C OLED display (SSD1306) on GPIO 21 (SDA) and GPIO 22 (SCL)',
-  'Connect a pushbutton trigger to GPIO 14 with pullup to GND',
-  'Add a PIR motion sensor on GPIO 14 and piezo buzzer on GPIO 15',
-]
+function renderAssistantContent(content: string): React.ReactNode {
+  return content.split('\n').map((line, lineIndex) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g)
+    return (
+      <span key={lineIndex} className="block min-h-[1em]">
+        {parts.map((part, partIndex) =>
+          part.startsWith('**') && part.endsWith('**')
+            ? <strong key={partIndex}>{part.slice(2, -2)}</strong>
+            : part
+        )}
+      </span>
+    )
+  })
+}
 
 const WELCOME_MESSAGE: MessageItem = {
   id: 'welcome',
@@ -46,36 +51,46 @@ const WELCOME_MESSAGE: MessageItem = {
   timestamp: new Date(),
 }
 
+const GENERATION_STEPS = ['Building', 'Wiring', 'Powering', 'Polishing']
+
 function loadSavedMessages(pid: string): MessageItem[] {
   try {
     const raw = localStorage.getItem(`automation_ai_chat_${pid || 'default'}`)
     if (raw) {
-      const parsed = JSON.parse(raw)
+      const parsed: unknown = JSON.parse(raw)
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((m: any) => ({
-          ...m,
-          timestamp: new Date(m.timestamp || Date.now()),
-        }))
+        return parsed.map((message) => {
+          const item = message as Record<string, unknown>
+          return {
+            ...item,
+            timestamp: new Date(typeof item.timestamp === 'string' || typeof item.timestamp === 'number' ? item.timestamp : Date.now()),
+          } as MessageItem
+        })
       }
     }
-  } catch {}
+  } catch {
+    return [WELCOME_MESSAGE]
+  }
   return [WELCOME_MESSAGE]
 }
 
 function saveMessages(pid: string, msgs: MessageItem[]) {
   try {
     localStorage.setItem(`automation_ai_chat_${pid || 'default'}`, JSON.stringify(msgs))
-  } catch {}
+  } catch {
+    return
+  }
 }
 
 export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, compact = false }) => {
   const circuitState = useCircuitStore()
-  const [projects, setProjects] = useState<Array<{ projectId: string; name: string }>>([])
   const [currentPid, setCurrentPid] = useState<string>(circuitState.projectId || '')
   const [models, setModels] = useState<Array<{ id: string; name: string; units: number }>>([])
   const [selectedModel, setSelectedModel] = useState<string>('deepseek-ai/DeepSeek-V3.2')
   const [inputMessage, setInputMessage] = useState('')
+  const [vineMentioned, setVineMentioned] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [generationStep, setGenerationStep] = useState(GENERATION_STEPS[0])
   const [messages, setMessages] = useState<MessageItem[]>(() => loadSavedMessages(''))
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -89,10 +104,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         }))
       : FALLBACK_MODELS
 
-  const projectOptions: DropdownOption[] = projects.map((p) => ({
-    value: p.projectId,
-    label: p.name || p.projectId,
-  }))
+  const projectMentionLabel = currentPid || 'project'
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -101,6 +113,17 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
   useEffect(() => {
     scrollToBottom()
   }, [messages, loading])
+
+  useEffect(() => {
+    if (!loading) return
+    let step = 0
+    setGenerationStep(GENERATION_STEPS[step])
+    const interval = window.setInterval(() => {
+      step = (step + 1) % GENERATION_STEPS.length
+      setGenerationStep(GENERATION_STEPS[step])
+    }, 900)
+    return () => window.clearInterval(interval)
+  }, [loading])
 
   // Save messages whenever they change
   useEffect(() => {
@@ -116,30 +139,11 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
     }
   }, [currentPid])
 
-  // Load projects and models on mount
+  // Load available models; the circuit store remains the single project source.
   useEffect(() => {
     async function init() {
       try {
-        const [projRes, modelRes] = await Promise.all([
-          listProjectsApi().catch(() => ({ projects: [] })),
-          fetchCircuitModelsApi().catch(() => ({ models: [] })),
-        ])
-
-        if (projRes?.projects?.length) {
-          setProjects(projRes.projects)
-          // Prefer the project already active in the store; only fall back to first
-          const storeId = circuitStore.getState().projectId
-          const activePid = storeId && projRes.projects.some((p: { projectId: string }) => p.projectId === storeId)
-            ? storeId
-            : projRes.projects[0].projectId
-          setCurrentPid(activePid)
-          setMessages(loadSavedMessages(activePid))
-          // Sync store if it was empty
-          if (!storeId) {
-            circuitStore.setProject(activePid)
-          }
-        }
-
+        const modelRes = await fetchCircuitModelsApi().catch(() => ({ models: [] }))
         if (modelRes?.models?.length) {
           setModels(modelRes.models)
           setSelectedModel(modelRes.models[0].id)
@@ -158,36 +162,28 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
     }
   }, [circuitState.projectId])
 
-  const ensureProject = async (): Promise<string> => {
+  const getActiveProject = (): string => {
     const activePid = circuitState.projectId || currentPid
-    if (activePid) {
-      if (currentPid !== activePid) setCurrentPid(activePid)
-      return activePid
-    }
-    try {
-      const res = await createProjectApi({
-        name: 'AI Automation Project',
-        description: 'Auto-created automation project for AI prompt automation',
-      })
-      if (res?.project?.projectId) {
-        const newId = res.project.projectId
-        setProjects((prev) => [...prev, { projectId: newId, name: res.project.name }])
-        setCurrentPid(newId)
-        circuitStore.setProject(newId)
-        return newId
-      }
-    } catch {
-      // fallback
-    }
-    return 'ai-automation-project'
+    if (currentPid !== activePid) setCurrentPid(activePid)
+    return activePid
   }
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputMessage).trim()
     if (!text || loading) return
 
-    const pid = await ensureProject()
+    const pid = getActiveProject()
+    if (!pid) {
+      setMessages((prev) => [...prev, {
+        id: Math.random().toString(36).substring(2, 9),
+        role: 'assistant',
+        content: 'Open an automation project first. I will build the flow in that project.',
+        timestamp: new Date(),
+      }])
+      return
+    }
     setInputMessage('')
+    setVineMentioned(false)
 
     const userMsg: MessageItem = {
       id: Math.random().toString(36).substring(2, 9),
@@ -216,7 +212,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         const assistantMsg: MessageItem = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: res.reply || 'Automation updated successfully.',
+          content: `${res.reply || 'Automation updated successfully.'}\n\nCanvas outputs are ready: Simulation, Pinout Map, and Wiring Guide.`,
           actions: res.actions || [],
           timestamp: new Date(),
         }
@@ -225,8 +221,9 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         // Reload the project in CircuitStore so Automation Studio is immediately updated!
         circuitStore.setProject(pid)
         if (res.newVersion) {
-          circuitStore.loadProjectCircuit(pid, res.newVersion, true)
+          await circuitStore.loadProjectCircuit(pid, res.newVersion, true)
         }
+        window.dispatchEvent(new CustomEvent('chip:automation-generated', { detail: { projectId: pid, version: res.newVersion } }))
       } else {
         const errorMsg: MessageItem = {
           id: Math.random().toString(36).substring(2, 9),
@@ -252,31 +249,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
   return (
     <div className="flex flex-col h-full w-full bg-white overflow-hidden select-none">
       {/* ── Top Bar ────────────────────────────────────────────────────────── */}
-      {compact ? (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 bg-white shrink-0">
-          <div className="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
-            <span className="text-[10px] uppercase font-semibold text-slate-400 shrink-0">Model</span>
-            <CleanDropdown
-              value={selectedModel}
-              options={modelOptions}
-              onChange={setSelectedModel}
-              className="flex-1 min-w-0"
-            />
-          </div>
-
-          <button
-            onClick={() => {
-              const fresh = [WELCOME_MESSAGE]
-              setMessages(fresh)
-              saveMessages(currentPid, fresh)
-            }}
-            className="text-[11px] text-slate-400 hover:text-rose-600 px-2 py-1 rounded hover:bg-slate-50 transition cursor-pointer shrink-0 font-medium"
-            title="Clear chat history"
-          >
-            Clear
-          </button>
-        </div>
-      ) : (
+      {!compact && (
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-white">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shadow-xs">
@@ -298,14 +271,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
           <div className="flex items-center gap-3">
             {/* Project Picker */}
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-slate-500 font-medium">Project</span>
-              <CleanDropdown
-                value={currentPid}
-                options={projectOptions}
-                onChange={setCurrentPid}
-                placeholder="Auto-create project"
-                size="md"
-              />
+              <span className="text-xs text-slate-500 font-medium">Project: {currentPid || 'none selected'}</span>
             </div>
 
             {/* Model Picker */}
@@ -357,30 +323,32 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex flex-col max-w-2xl ${msg.role === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+            className={`flex w-full max-w-2xl ${msg.role === 'user' ? 'ml-auto justify-end' : 'mr-auto items-start gap-2'}`}
           >
-            <div className="flex items-center gap-1.5 mb-1 px-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                {msg.role === 'user' ? 'You' : 'Automation Assistant'}
-              </span>
-              <span className="text-[10px] text-slate-400">
-                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
+            {msg.role === 'assistant' && (
+              <div className="relative flex w-5 shrink-0 justify-center self-stretch">
+                <span className="absolute top-5 bottom-0 w-px bg-slate-200" />
+                <span className="relative z-10 mt-1 grid h-5 w-5 place-items-center rounded-full border border-slate-200 bg-white text-slate-500">
+                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3v4M12 17v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M3 12h4M17 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" />
+                  </svg>
+                </span>
+              </div>
+            )}
 
-            <div
-              className={`rounded-2xl px-4 py-3 text-xs leading-relaxed ${
-                msg.role === 'user'
-                  ? 'bg-slate-900 text-white shadow-xs rounded-br-xs'
-                  : 'bg-slate-50 border border-slate-200 text-slate-800 shadow-xs rounded-bl-xs'
-              }`}
-            >
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+            <div className={`${msg.role === 'user' ? 'max-w-[85%]' : 'min-w-0 flex-1'} text-xs leading-relaxed`}>
+              <div className="mb-1 flex items-center gap-1.5 text-[10px] text-slate-400">
+                <span className="font-medium text-slate-500">{msg.role === 'user' ? 'You' : 'Assistant'}</span>
+                <span>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <div className={msg.role === 'user' ? 'rounded-2xl rounded-br-sm bg-slate-900 px-3.5 py-2.5 text-white' : 'px-0.5 py-0.5 text-slate-800'}>
+                {msg.role === 'assistant' ? renderAssistantContent(msg.content) : msg.content}
+              </div>
 
               {/* Action Badges */}
               {msg.actions && msg.actions.length > 0 && (
                 <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-1.5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  <span className="text-[10px] font-bold text-slate-500 tracking-wider block">
                     Executed Automation Actions ({msg.actions.length})
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -402,11 +370,8 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
 
         {loading && (
           <div className="flex flex-col max-w-2xl mr-auto items-start">
-            <div className="flex items-center gap-2 mb-1 px-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Automation Assistant</span>
-              <span className="text-[10px] text-amber-500 font-medium">Generating automation...</span>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-xs px-4 py-3 shadow-xs">
+            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2">
+              <span className="text-[11px] text-slate-500">{generationStep}...</span>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-amber-400 animate-bounce" />
                 <div className="w-2 h-2 rounded-full bg-amber-400 animate-bounce [animation-delay:0.2s]" />
@@ -419,25 +384,6 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ── Quick Prompt Suggestion Chips ───────────────────────────────────── */}
-      <div className={`border-t border-slate-100 bg-white flex items-center gap-1.5 overflow-x-auto no-scrollbar ${compact ? 'px-3 py-1.5' : 'px-6 py-2'}`}>
-        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">
-          Try:
-        </span>
-        {QUICK_PROMPTS.map((prompt, idx) => (
-          <button
-            key={idx}
-            onClick={() => handleSendMessage(prompt)}
-            disabled={loading}
-            className={`text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full shrink-0 transition disabled:opacity-50 cursor-pointer ${
-              compact ? 'text-[10px] px-2.5 py-0.5' : 'text-[11px] px-3 py-1'
-            }`}
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-
       {/* ── Chat Input ──────────────────────────────────────────────────────── */}
       <div className={`border-t border-slate-200 bg-white ${compact ? 'p-2.5' : 'p-4'}`}>
         <form
@@ -447,12 +393,32 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
           }}
           className="flex items-center gap-2"
         >
+          {vineMentioned && (
+            <button
+              type="button"
+              onClick={() => setVineMentioned(false)}
+              className="inline-flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-1.5 text-[10px] font-medium text-slate-600 shadow-2xs hover:border-slate-300 hover:bg-slate-200"
+              title={`Remove ${projectMentionLabel} mention`}
+            >
+              <span className="grid h-4 w-4 place-items-center rounded-[4px] bg-slate-800 text-[8px] font-bold text-white">P</span>
+              <span className="truncate">{projectMentionLabel}</span>
+              <span className="text-slate-400">×</span>
+            </button>
+          )}
           <input
             type="text"
             value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
+            onChange={(e) => {
+              const raw = e.target.value
+              if (/@vine\b/i.test(raw)) {
+                setVineMentioned(true)
+                setInputMessage(raw.replace(/@vine\b/gi, '').replace(/^\s+/, ''))
+              } else {
+                setInputMessage(raw)
+              }
+            }}
             disabled={loading}
-            placeholder={compact ? "Prompt AI to build automation..." : "Ask AI to build or wire an automation (e.g. 'Add an ESP32 and wire an LED to GPIO 2 with 220Ω resistor')..."}
+            placeholder="Describe how this project should work..."
             className={`flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-hidden focus:border-slate-400 focus:bg-white transition ${
               compact ? 'px-3 py-2 text-[11px]' : 'px-4 py-2.5'
             }`}

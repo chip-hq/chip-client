@@ -173,7 +173,7 @@ export function HistoryView({ backendUrl, connected, refreshKey, onFlashBinary, 
   const codeLines = (selectedJob?.sourceCode || '').split('\n')
 
   return (
-    <div className="bg-white border border-[#e5e5e5] rounded-md overflow-hidden flex flex-col md:flex-row h-[calc(100vh-140px)] min-h-[560px] select-none">
+    <div className="history-shell bg-white border border-[#e5e5e5] rounded-md overflow-hidden flex flex-col md:flex-row h-[calc(100vh-140px)] min-h-[560px] select-none">
       {/* ── Left Column: Clean VSCode / Cursor Explorer ──────────────────────── */}
       <div className="w-full md:w-64 bg-[#fcfcfc] border-r border-[#e5e5e5] flex flex-col shrink-0">
         {/* Explorer Header */}

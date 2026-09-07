@@ -134,13 +134,7 @@ export default function App() {
   }, [error, showAlert])
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center">
-        <div className="bg-white border border-[#e5e5e5] p-8 text-center">
-          <span className="sp-spinner" aria-hidden="true" />
-        </div>
-      </div>
-    )
+    return null
   }
 
   const params = new URLSearchParams(window.location.search)
@@ -1328,7 +1322,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       {/* Main View Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Clean Header Bar */}
-        <header className="h-12 border-none bg-transparent flex items-center justify-between px-4 md:px-8 shrink-0">
+        <header className="app-header h-12 border-none bg-transparent flex items-center justify-between px-4 md:px-8 shrink-0">
           <div className="flex items-center gap-3">
             <button
               className={`${sidebarOpen ? 'md:hidden' : ''} text-[#666666] hover:text-black p-1 -ml-1 rounded hover:bg-[#ebebeb] transition-colors cursor-pointer`}
@@ -1361,7 +1355,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="app-header-actions flex items-center gap-2">
             <button
               onClick={handleAppRefresh}
               disabled={isRefreshing}
@@ -1809,12 +1803,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
           <AgentSidebar
             open={agentSidebarOpen}
             onClose={() => setAgentSidebarOpen(false)}
-            boardConnected={connected}
-            chipModel={chip}
-            baudRate={baud}
-            agentConnected={agentConnected}
-            cloudConnected={cloudConnected}
-            serialLogs={log}
           />
         </div>
 

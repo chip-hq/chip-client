@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react'
 import type { CircuitDefinition } from './types'
+import { circuitStore } from './store'
 
 export interface WorkflowNode {
   id: string
@@ -250,6 +251,37 @@ export function deriveWorkflowFromCircuit(
       return
     }
 
+    const powerIdentity = `${name} ${val} ${(comp.lib || '').toLowerCase()}`
+    if (powerIdentity.includes('regulator') || powerIdentity.includes('ams1117') || powerIdentity.includes('lm1117')) {
+      const pos = savedLayout[nodeId] || { x: 480, y: 300 + actuatorIdx * 160 }
+      nodes.push({
+        id: nodeId,
+        name: comp.value || comp.name || 'Voltage Regulator',
+        category: 'actuator',
+        type: 'regulator',
+        x: pos.x,
+        y: pos.y,
+        params: { input: 'VI', output: 'VO', voltage: '3.3V' },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'actuator' })
+      return
+    }
+
+    if (powerIdentity.includes('power') || powerIdentity.includes('battery') || powerIdentity.includes('dc_source') || ref.startsWith('PWR')) {
+      const pos = savedLayout[nodeId] || { x: 280, y: 300 + triggerIdx * 160 }
+      nodes.push({
+        id: nodeId,
+        name: comp.value || comp.name || 'Power Supply',
+        category: 'trigger',
+        type: 'power',
+        x: pos.x,
+        y: pos.y,
+        params: { output: 'VOUT' },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'trigger' })
+      return
+    }
+
     // Generic Actuator
     const pos = savedLayout[nodeId] || { x: 680 + actuatorIdx * 160, y: 160 }
     actuatorIdx++
@@ -267,8 +299,10 @@ export function deriveWorkflowFromCircuit(
 
   // Add logic node if both sensors & actuators exist
   const hasSensors = compNodes.some((n) => n.category === 'sensor')
-  const hasActuators = compNodes.some((n) => n.category === 'actuator')
+  const hasActuators = compNodes.some((n) => n.category === 'actuator' && nodes.find((item) => item.id === n.nodeId)?.type !== 'regulator')
   let logicNodeId: string | null = null
+  const powerNode = compNodes.find((node) => node.nodeId && nodes.find((item) => item.id === node.nodeId)?.type === 'power')
+  const regulatorNode = compNodes.find((node) => node.nodeId && nodes.find((item) => item.id === node.nodeId)?.type === 'regulator')
 
   if (hasSensors && hasActuators) {
     logicNodeId = 'node-logic-auto'
@@ -286,6 +320,10 @@ export function deriveWorkflowFromCircuit(
 
   // 3. Connect the flow
   let connIdCounter = 1
+  if (powerNode && regulatorNode) {
+    connections.push({ id: `c-auto-${connIdCounter++}`, fromId: powerNode.nodeId, toId: regulatorNode.nodeId })
+    connections.push({ id: `c-auto-${connIdCounter++}`, fromId: regulatorNode.nodeId, toId: mcuId })
+  }
   if (hasSensors) {
     // MCU -> Sensor
     compNodes.filter((n) => n.category === 'sensor').forEach((s) => {
@@ -304,7 +342,7 @@ export function deriveWorkflowFromCircuit(
     })
 
     if (logicNodeId) {
-      compNodes.filter((n) => n.category === 'actuator').forEach((a) => {
+      compNodes.filter((n) => n.category === 'actuator' && n.nodeId !== regulatorNode?.nodeId).forEach((a) => {
         connections.push({
           id: `c-auto-${connIdCounter++}`,
           fromId: logicNodeId!,
@@ -314,7 +352,7 @@ export function deriveWorkflowFromCircuit(
     }
   } else {
     // MCU -> Actuator directly
-    compNodes.filter((n) => n.category === 'actuator').forEach((a) => {
+    compNodes.filter((n) => n.category === 'actuator' && n.nodeId !== regulatorNode?.nodeId).forEach((a) => {
       connections.push({
         id: `c-auto-${connIdCounter++}`,
         fromId: mcuId,
@@ -329,6 +367,26 @@ export function deriveWorkflowFromCircuit(
       id: `c-auto-${connIdCounter++}`,
       fromId: mcuId,
       toId: d.nodeId,
+    })
+  })
+
+  const nodeByRef = new Map<string, string>([
+    ...(mcu ? [[mcu.ref.toUpperCase(), mcuId] as [string, string]] : []),
+    ...compNodes.map((component) => [component.ref.toUpperCase(), component.nodeId] as [string, string]),
+  ])
+  ;(circuit.connections || []).forEach((connection) => {
+    const refs = connection.nodes
+      .map((node) => node.split('.')[0].toUpperCase())
+      .filter((ref, index, all) => all.indexOf(ref) === index)
+    if (refs.length < 2) return
+    const firstNode = nodeByRef.get(refs[0])
+    if (!firstNode) return
+    refs.slice(1).forEach((ref) => {
+      const targetNode = nodeByRef.get(ref)
+      if (!targetNode || firstNode === targetNode) return
+      if (!connections.some((edge) => edge.fromId === firstNode && edge.toId === targetNode)) {
+        connections.push({ id: `c-net-${connIdCounter++}`, fromId: firstNode, toId: targetNode })
+      }
     })
   })
 
@@ -427,6 +485,19 @@ function getNodeIcon(type: string) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
         </svg>
       )
+    case 'regulator':
+      return (
+        <svg className="w-8 h-8 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <rect x="4" y="5" width="16" height="14" rx="2" strokeWidth="2" />
+          <path strokeLinecap="round" strokeWidth="2" d="M8 9h8M8 13h5M8 17h8" />
+        </svg>
+      )
+    case 'power':
+      return (
+        <svg className="w-8 h-8 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v8m-5.5-5A8 8 0 1017.5 6" />
+        </svg>
+      )
     case 'buzzer':
       return (
         <svg className="w-8 h-8 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -492,6 +563,22 @@ export function AutomationCanvas({
       setConnections([])
     }
   }, [circuit, projectId])
+
+  useEffect(() => {
+    const handleAutomationGenerated = (event: Event) => {
+      const generatedProjectId = (event as CustomEvent<{ projectId?: string }>).detail?.projectId
+      if (generatedProjectId && generatedProjectId !== projectId) return
+
+      const latestCircuit = circuitStore.getState().circuit
+      const latestProjectId = circuitStore.getState().projectId || projectId
+      const derived = deriveWorkflowFromCircuit(latestCircuit, latestProjectId)
+      setNodes(derived.nodes)
+      setConnections(derived.connections)
+    }
+
+    window.addEventListener('chip:automation-generated', handleAutomationGenerated)
+    return () => window.removeEventListener('chip:automation-generated', handleAutomationGenerated)
+  }, [projectId])
   // Pan & Zoom state
   const [zoom, setZoom] = useState<number>(1)
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -513,10 +600,9 @@ export function AutomationCanvas({
   const [simTemp, setSimTemp] = useState(29.4)
   const [simLight, setSimLight] = useState(180)
   const [simMotion, setSimMotion] = useState(false)
-  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
 
   // Active drawer tab
-  const [outcomeTab, setOutcomeTab] = useState<'simulation' | 'pinout' | 'wiring' | 'firmware'>('simulation')
+  const [outcomeTab, setOutcomeTab] = useState<'simulation' | 'pinout' | 'wiring'>('simulation')
 
   // Auto-simulation ticker
   useEffect(() => {
@@ -558,10 +644,10 @@ export function AutomationCanvas({
     const contentW = Math.max(maxX - minX + padding * 2, 200)
     const contentH = Math.max(maxY - minY + padding * 2, 200)
 
-    const scale = Math.min(
-      Math.max(Math.min(rect.width / contentW, rect.height / contentH), 0.35),
-      1.5
-    )
+    const isNarrow = rect.width < 640
+    const scale = isNarrow
+      ? Math.min(Math.max(Math.min(rect.width / contentW, rect.height / contentH), 0.55), 0.9)
+      : Math.min(Math.max(Math.min(rect.width / contentW, rect.height / contentH), 0.35), 1.5)
 
     const centerX = (minX + maxX) / 2
     const centerY = (minY + maxY) / 2
@@ -572,6 +658,11 @@ export function AutomationCanvas({
       y: rect.height / 2 - centerY * scale,
     })
   }
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => fitToScreen())
+    return () => window.cancelAnimationFrame(frame)
+  }, [nodes.length, projectId])
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault()
@@ -701,6 +792,18 @@ export function AutomationCanvas({
       }
       setConnections((prev) => [...prev, newConn])
     }
+
+    const sourceNode = nodes.find((node) => node.id === connectingFromId)
+    const targetNode = nodes.find((node) => node.id === targetNodeId)
+    const sourceRef = sourceNode?.id.startsWith('node-') ? sourceNode.id.slice(5) : ''
+    const targetRef = targetNode?.id.startsWith('node-') ? targetNode.id.slice(5) : ''
+    const sourcePin = sourceNode?.type === 'power' ? 'VOUT' : sourceNode?.type === 'regulator' ? 'VO' : 'OUT'
+    const targetPin = targetNode?.type === 'timer' ? '3V3' : targetNode?.type === 'regulator' ? 'VI' : 'IN'
+    if (sourceRef && targetRef && projectId) {
+      const net = sourceNode?.type === 'power' || targetNode?.type === 'regulator' ? '5V_RAW' : '3V3'
+      void circuitStore.connectPins({ net, nodes: [`${sourceRef}.${sourcePin}`, `${targetRef}.${targetPin}`] }, 'UI')
+    }
+
     setConnectingFromId(null)
     setConnectingMousePos(null)
   }
@@ -719,20 +822,6 @@ export function AutomationCanvas({
     }
   }
 
-  const handleClearAll = () => {
-    setNodes([])
-    setConnections([])
-    setConnectingFromId(null)
-    setHoveredConnId(null)
-    setConnectingMousePos(null)
-    if (projectId) {
-      try {
-        localStorage.removeItem(`automation_layout_${projectId}`)
-      } catch {}
-    }
-    resetZoom()
-  }
-
   const handleLoadExample = () => {
     setNodes(DEFAULT_NODES)
     setConnections(DEFAULT_CONNECTIONS)
@@ -748,48 +837,6 @@ export function AutomationCanvas({
     }
   }
 
-  const handleAddNode = (
-    category: WorkflowNode['category'],
-    type: string,
-    name: string,
-    params: Record<string, string | number>
-  ) => {
-    const currentCount = nodes.length
-    const col = currentCount % 4
-    const row = Math.floor(currentCount / 4)
-
-    const newNode: WorkflowNode = {
-      id: `n-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      name,
-      category,
-      type,
-      x: 80 + col * 200,
-      y: 120 + row * 180,
-      params,
-    }
-    setNodes((prev) => [...prev, newNode])
-    setIsAddMenuOpen(false)
-
-    if (onAddComponentToCircuit) {
-      const idx = nodes.length + 1
-      if (type === 'dht22') {
-        onAddComponentToCircuit({ ref: `SEN${idx}`, name: 'DHT22', lib: 'Sensor', value: 'DHT22' })
-      } else if (type === 'relay') {
-        onAddComponentToCircuit({ ref: `K${idx}`, name: 'Relay', lib: 'Relay', value: '5V Relay' })
-      } else if (type === 'led') {
-        onAddComponentToCircuit({ ref: `D${idx}`, name: 'LED', lib: 'Device', value: 'LED' })
-      } else if (type === 'buzzer') {
-        onAddComponentToCircuit({ ref: `BZ${idx}`, name: 'Buzzer', lib: 'Device', value: 'Piezo Buzzer' })
-      } else if (type === 'oled') {
-        onAddComponentToCircuit({ ref: `DS${idx}`, name: 'SSD1306_128x64', lib: 'Display_Graphic', value: 'SSD1306' })
-      } else if (type === 'pir') {
-        onAddComponentToCircuit({ ref: `SEN${idx}`, name: 'PIR', lib: 'Sensor', value: 'PIR Motion' })
-      } else if (type === 'ldr') {
-        onAddComponentToCircuit({ ref: `R${idx}`, name: 'LDR', lib: 'Device', value: 'LDR' })
-      }
-    }
-  }
-
   const circuitOutcome = useMemo(() => {
     const pinMap: Array<{
       module: string
@@ -799,11 +846,7 @@ export function AutomationCanvas({
       notes: string
     }> = []
 
-    const wiring: string[] = [
-      'Bridge ESP32 across breadboard centerline.',
-      'Connect ESP32 GND to blue (-) negative ground rail.',
-      'Connect ESP32 3V3 to red (+) 3.3V logic supply rail.',
-    ]
+    const wiring: string[] = []
 
     let hasDHT = false
     let hasRelay = false
@@ -881,49 +924,87 @@ export function AutomationCanvas({
       }
     })
 
-    const firmwareCode = `// =========================================================================
-// AUTO-GENERATED CHIP FIRMWARE (Synthesized from Workflow)
-// Target: ESP32 DevKit V1 | Serial Baud: 115200
-// =========================================================================
+    const controller = circuit?.components.find((component) => {
+      const identity = `${component.name} ${component.value} ${component.lib}`.toLowerCase()
+      return identity.includes('esp32') || identity.includes('arduino') || component.ref.toUpperCase() === 'U1'
+    })
 
-#include <Arduino.h>
-#include <Wire.h>
-${hasDHT ? '#include <DHT.h>\n' : ''}${hasOLED ? '#include <Adafruit_SSD1306.h>\n' : ''}
-${hasDHT ? '#define DHTPIN 4\n#define DHTTYPE DHT22\nDHT dht(DHTPIN, DHTTYPE);\n' : ''}${hasRelay ? '#define RELAY_PIN 26\n' : ''}${hasLDR ? '#define LDR_PIN 34\n' : ''}${hasBuzzer ? '#define BUZZER_PIN 25\n' : ''}${hasPIR ? '#define PIR_PIN 14\n' : ''}${hasOLED ? '#define SCREEN_WIDTH 128\n#define SCREEN_HEIGHT 64\nAdafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);\n' : ''}
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("[CHIP] Initializing Hardware Pins...");
+    const powerSupply = circuit?.components.find((component) => {
+      const identity = `${component.name} ${component.value} ${component.lib}`.toLowerCase()
+      return identity.includes('power') || identity.includes('battery') || identity.includes('dc_source') || component.ref.toUpperCase().startsWith('PWR')
+    })
+    const regulator = circuit?.components.find((component) => {
+      const identity = `${component.name} ${component.value} ${component.lib}`.toLowerCase()
+      return identity.includes('regulator') || identity.includes('ams1117') || identity.includes('lm1117')
+    })
 
-  ${hasRelay ? 'pinMode(RELAY_PIN, OUTPUT);\n  digitalWrite(RELAY_PIN, LOW); // Default OFF\n' : ''}${hasDHT ? '  dht.begin();\n' : ''}${hasLDR ? '  analogReadResolution(12);\n' : ''}${hasBuzzer ? '  pinMode(BUZZER_PIN, OUTPUT);\n' : ''}${hasPIR ? '  pinMode(PIR_PIN, INPUT_PULLDOWN);\n' : ''}${hasOLED ? '  Wire.begin(21, 22);\n  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);\n  display.clearDisplay();\n  display.display();\n' : ''}
-  Serial.println("[CHIP] System Ready.");
-}
+    if (controller && nodes.length > 0) {
+      wiring.unshift(
+        `Use ${controller.value || controller.name || controller.ref} as the controller.`,
+        `Connect ${controller.ref} GND to the common ground rail.`,
+        `Connect ${controller.ref} power according to the voltage shown in the Pinout Map.`
+      )
+    }
 
-void loop() {
-  ${hasDHT ? `
-  float temp = dht.readTemperature();
-  Serial.printf("[SENSOR] Temp: %.1f C\\n", temp);
-  ${hasRelay ? `
-  if (temp > 28.0) {
-    digitalWrite(RELAY_PIN, HIGH);
-    Serial.println("[ACTION] Relay: ON");
-  } else {
-    digitalWrite(RELAY_PIN, LOW);
-  }
-  ` : ''}
-  ` : hasLDR ? `
-  int light = analogRead(LDR_PIN);
-  Serial.printf("[SENSOR] Light: %d\\n", light);
-  ` : `
-  Serial.println("[LOOP] Heartbeat.");
-  `}
-  delay(2000);
-}`
+    if (powerSupply && regulator && controller) {
+      const supplyName = powerSupply.value || powerSupply.name || powerSupply.ref
+      const regulatorName = regulator.value || regulator.name || regulator.ref
+      const supplyToRegulator = (circuit?.connections || []).find((connection) =>
+        connection.nodes.some((node) => node.toUpperCase().startsWith(`${powerSupply.ref.toUpperCase()}.`)) &&
+        connection.nodes.some((node) => node.toUpperCase().startsWith(`${regulator.ref.toUpperCase()}.`))
+      )
+      const regulatorToController = (circuit?.connections || []).find((connection) =>
+        connection.nodes.some((node) => node.toUpperCase().startsWith(`${regulator.ref.toUpperCase()}.`)) &&
+        connection.nodes.some((node) => node.toUpperCase().startsWith(`${controller.ref.toUpperCase()}.`))
+      )
+      const sharedGround = (circuit?.connections || []).find((connection) => {
+        const nodesInNet = connection.nodes.map((node) => node.toUpperCase())
+        return nodesInNet.some((node) => node.startsWith(`${powerSupply.ref.toUpperCase()}.`)) &&
+          nodesInNet.some((node) => node.startsWith(`${regulator.ref.toUpperCase()}.`)) &&
+          nodesInNet.some((node) => node.startsWith(`${controller.ref.toUpperCase()}.`))
+      })
+
+      pinMap.push(
+        { module: supplyName, pin: 'VOUT', espPin: supplyToRegulator ? `${regulator.ref}.VI` : 'Regulator input', voltage: '5V raw', notes: supplyToRegulator ? `Connected on ${supplyToRegulator.net}.` : 'Connect positive output to the regulator input.' },
+        { module: regulatorName, pin: 'VO', espPin: regulatorToController ? `${controller.ref}.3V3` : 'ESP32 3V3', voltage: '3.3V regulated', notes: regulatorToController ? `Connected on ${regulatorToController.net}.` : 'Connect regulator output to the controller 3V3 pin.' }
+      )
+      wiring.push(
+        `${supplyName} positive output → ${regulatorName} input (VI).${supplyToRegulator ? ` Connected on ${supplyToRegulator.net}.` : ' Add this connection.'}`,
+        `${regulatorName} 3.3V output (VO) → ${controller.ref}.3V3.${regulatorToController ? ` Connected on ${regulatorToController.net}.` : ' Add this connection.'}`,
+        `${powerSupply.ref}.GND → ${regulator.ref}.GND → ${controller.ref}.GND on one shared ground net.${sharedGround ? ` Connected on ${sharedGround.net}.` : ' Add this shared ground connection.'}`
+      )
+    }
+
+    const knownComponent = (component: CircuitDefinition['components'][number]) => {
+      const identity = `${component.name} ${component.value}`.toLowerCase()
+      return ['dht', 'relay', 'oled', 'ssd1306', 'ldr', 'photo', 'buzzer', 'pir', 'motion', 'led', 'power', 'battery', 'dc_source', 'regulator', 'ams1117', 'lm1117'].some((term) => identity.includes(term))
+    }
+
+    for (const component of circuit?.components || []) {
+      if (component === controller || knownComponent(component)) continue
+      const identity = `${component.name} ${component.value}`.trim() || component.ref
+      const connectedNet = (circuit?.connections || []).find((connection) =>
+        connection.nodes.some((node) => node.toUpperCase().startsWith(`${component.ref.toUpperCase()}.`))
+      )
+      const controllerNode = connectedNet?.nodes.find((node) => controller && node.toUpperCase().startsWith(`${controller.ref.toUpperCase()}.`))
+      const controllerPin = controllerNode ? controllerNode.split('.').slice(1).join('.') : 'an available GPIO'
+      pinMap.push({
+        module: identity,
+        pin: 'Signal / power pins',
+        espPin: controllerPin,
+        voltage: 'See component datasheet',
+        notes: connectedNet ? `Connected on ${connectedNet.net}. Verify VCC, GND, and signal voltage before powering.` : 'No controller net assigned yet.',
+      })
+      wiring.push(
+        connectedNet
+          ? `Connect ${identity} using net ${connectedNet.net}; its controller signal is ${controllerPin}. Verify the module pin labels and supply voltage before powering.`
+          : `Add a connection from ${identity} to the controller, then verify its VCC, GND, and signal pins in the Pinout Map.`
+      )
+    }
 
     return {
       pinMap,
       wiring,
-      firmwareCode,
       hasDHT,
       hasRelay,
       hasOLED,
@@ -964,124 +1045,6 @@ void loop() {
             isPanning ? 'cursor-grabbing' : 'cursor-default'
           }`}
         >
-          {/* Floating Canvas Controls: Add Node & Clear */}
-          <div className="absolute top-3 left-3 z-30 flex items-center gap-2">
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIsAddMenuOpen(!isAddMenuOpen)
-                }}
-                className="h-8 px-3.5 bg-black hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-md transition-colors cursor-pointer"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                </svg>
-                <span>Add Component</span>
-              </button>
-
-              {isAddMenuOpen && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute top-10 left-0 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl p-1.5 z-50 text-xs space-y-0.5 animate-in fade-in-50 duration-150"
-                >
-                  <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400">Triggers</div>
-                  <button
-                    onClick={() => handleAddNode('trigger', 'timer', 'Timer Interval (2s)', { rate: '2000ms' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>⏱</span>
-                    <span>Interval Timer</span>
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('trigger', 'pir', 'PIR Motion Interrupt', { pin: 'GPIO 14' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>🚨</span>
-                    <span>PIR Motion Interrupt</span>
-                  </button>
-
-                  <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400 mt-1">Sensors</div>
-                  <button
-                    onClick={() => handleAddNode('sensor', 'dht22', 'DHT22 Sensor (GPIO 4)', { pin: 'GPIO 4' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>🌡</span>
-                    <span>DHT22 Temp & Humidity</span>
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('sensor', 'ldr', 'LDR Light Sensor (GPIO 34)', { pin: 'GPIO 34' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>☀️</span>
-                    <span>LDR Photoresistor (ADC)</span>
-                  </button>
-
-                  <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400 mt-1">Logic & Condition</div>
-                  <button
-                    onClick={() => handleAddNode('logic', 'threshold', 'Condition (Temp > 28°C)', { threshold: 28 })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>🔀</span>
-                    <span>Threshold (&gt; 28°C)</span>
-                  </button>
-
-                  <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400 mt-1">Actuators & Outputs</div>
-                  <button
-                    onClick={() => handleAddNode('actuator', 'relay', '5V Relay Switch (GPIO 26)', { pin: 'GPIO 26' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>⚡</span>
-                    <span>5V Relay Switch</span>
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('actuator', 'led', 'Status LED (GPIO 2)', { pin: 'GPIO 2' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>💡</span>
-                    <span>Status Indicator LED</span>
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('actuator', 'buzzer', 'Piezo Buzzer (GPIO 15)', { pin: 'GPIO 15' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>🔔</span>
-                    <span>Piezo Alarm Buzzer</span>
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('actuator', 'vibration', 'Haptic Vibration (GPIO 13)', { pin: 'GPIO 13' })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>📳</span>
-                    <span>Vibration Motor</span>
-                  </button>
-
-                  <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400 mt-1">Displays</div>
-                  <button
-                    onClick={() => handleAddNode('display', 'oled', 'SSD1306 OLED (I2C)', { sda: 21, scl: 22 })}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>🖥</span>
-                    <span>SSD1306 OLED Screen</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {nodes.length > 0 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleClearAll()
-                }}
-                title="Reset project"
-                className="h-8 px-3 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-lg text-xs font-semibold border border-slate-200 shadow-sm transition-colors cursor-pointer"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
           {/* EMPTY PROJECT STATE */}
           {nodes.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 select-none pointer-events-none z-20">
@@ -1093,21 +1056,9 @@ void loop() {
               </div>
               <h3 className="text-sm font-bold text-slate-800 mb-1">Canvas is Empty</h3>
               <p className="text-xs text-slate-500 max-w-sm mb-4">
-                Add components or load a starter flow to build your automation workflow.
+                Describe your automation in the Agent Studio, or load a starter flow to begin.
               </p>
               <div className="flex items-center gap-3 pointer-events-auto">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setIsAddMenuOpen(true)
-                  }}
-                  className="w-28 h-28 bg-black hover:bg-slate-800 text-white rounded-xl flex flex-col items-center justify-center gap-2.5 shadow-sm transition-colors cursor-pointer"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span className="text-xs font-semibold">Add Component</span>
-                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -1279,6 +1230,7 @@ void loop() {
               const isActuator = node.category === 'actuator'
               const isSensor = node.category === 'sensor'
               const isConnectingFromThis = connectingFromId === node.id
+              const canReceiveInput = node.type !== 'power'
 
               return (
                 <div
@@ -1296,10 +1248,10 @@ void loop() {
                     } ${isConnectingFromThis ? 'ring-4 ring-slate-900/15 border-slate-900' : ''}`}
                   >
                     {/* Input Port (Left Edge) */}
-                    {node.category !== 'trigger' && (
+                    {canReceiveInput && (
                       <div
                         onClick={(e) => handleInputPortClick(e, node.id)}
-                        title="Input Port (Click to connect wire)"
+                        title="Input port (click to finish wiring)"
                         className={`no-drag absolute -left-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-xs transition-transform hover:scale-125 cursor-pointer z-20 flex items-center justify-center ${
                           connectingFromId && connectingFromId !== node.id
                             ? 'bg-slate-900 animate-bounce ring-2 ring-slate-300'
@@ -1442,7 +1394,7 @@ void loop() {
 
         {/* ── AI Simulation Control & Solid Outcome Drawer (Right Side) ──── */}
         {isDrawerOpen && (
-          <div className="w-full md:w-88 border-l border-[#e5e5e5] bg-white flex flex-col shrink-0 animate-in slide-in-from-right-10 duration-150 z-20">
+          <div className="automation-outcome-drawer w-full md:w-88 border-l border-[#e5e5e5] bg-white flex flex-col shrink-0 animate-in slide-in-from-right-10 duration-150 z-20">
             {/* Drawer Tab Headers with Close Button */}
             <div className="flex items-center justify-between border-b border-[#e5e5e5] bg-slate-50 pr-2">
               <div className="flex flex-1 text-[11px] font-semibold">
@@ -1476,16 +1428,6 @@ void loop() {
                 >
                   Wiring Guide
                 </button>
-                <button
-                  onClick={() => setOutcomeTab('firmware')}
-                  className={`flex-1 py-2.5 text-center transition-all cursor-pointer ${
-                    outcomeTab === 'firmware'
-                      ? 'bg-white text-slate-900 border-b-2 border-black font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  C++ Code
-                </button>
               </div>
 
               {/* Close Drawer Button */}
@@ -1515,7 +1457,7 @@ void loop() {
               {/* Interactive Simulation Sliders */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">
+                  <span className="text-[10px] font-bold text-slate-700 tracking-wide">
                     Live Inputs
                   </span>
                   <button
@@ -1593,41 +1535,6 @@ void loop() {
                 )}
               </div>
 
-              {/* Real-Time Hardware Logic Evaluation */}
-              <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">
-                  Live Hardware Response
-                </span>
-                <div
-                  className={`p-2.5 rounded-lg border transition-all ${
-                    conditionMet
-                      ? 'bg-slate-900 border-slate-900 text-white'
-                      : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 font-bold text-xs">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        conditionMet ? 'bg-white animate-ping' : 'bg-slate-400'
-                      }`}
-                    />
-                    <span>
-                      {conditionMet
-                        ? 'ACTUATOR ENERGIZED'
-                        : hasActuatorWired
-                        ? 'STANDBY (Conditions not met)'
-                        : 'IDLE (No actuator wired)'}
-                    </span>
-                  </div>
-                  <p className="text-[10px] mt-0.5 opacity-80">
-                    {conditionMet
-                      ? 'Signal pathway active. Output pin set to HIGH.'
-                      : hasActuatorWired
-                      ? 'Signal wire connected, waiting for trigger threshold.'
-                      : 'No actuator wired to signal pathway.'}
-                  </p>
-                </div>
-              </div>
             </div>
           )}
 
@@ -1671,37 +1578,22 @@ void loop() {
           {/* TAB 3: STEP-BY-STEP WIRING GUIDE */}
           {outcomeTab === 'wiring' && (
             <div className="p-3.5 flex-1 overflow-y-auto space-y-2 text-xs">
-              <h5 className="font-bold text-slate-800 text-[10px] uppercase tracking-wide">
-                Breadboard Assembly Guide
-              </h5>
-              {circuitOutcome.wiring.map((step, i) => (
-                <div key={i} className="flex gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200">
-                  <span className="w-4 h-4 rounded-full bg-black text-white font-bold flex items-center justify-center shrink-0 text-[9px]">
-                    {i + 1}
-                  </span>
-                  <p className="text-slate-700 text-[10px] leading-relaxed">{step}</p>
-                </div>
-              ))}
+              {circuitOutcome.wiring.length === 0 ? (
+                <div className="p-4 text-center text-slate-400 text-xs">Add components to generate a wiring guide.</div>
+              ) : (
+                <>
+                  <h5 className="font-bold text-slate-800 text-[10px] tracking-wide">Breadboard Assembly Guide</h5>
+                  {circuitOutcome.wiring.map((step, i) => (
+                    <div key={i} className="flex gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200">
+                      <span className="w-4 h-4 rounded-full bg-black text-white font-bold flex items-center justify-center shrink-0 text-[9px]">{i + 1}</span>
+                      <p className="text-slate-700 text-[10px] leading-relaxed">{step}</p>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           )}
 
-          {/* TAB 4: GENERATED FIRMWARE */}
-          {outcomeTab === 'firmware' && (
-            <div className="p-3.5 flex-1 overflow-hidden flex flex-col text-xs">
-              <div className="flex justify-between items-center mb-1">
-                <span className="font-mono text-[10px] text-slate-500">main.cpp</span>
-                <button
-                  onClick={() => navigator.clipboard.writeText(circuitOutcome.firmwareCode)}
-                  className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-medium cursor-pointer"
-                >
-                  Copy
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto bg-slate-900 text-slate-100 p-2.5 rounded-lg font-mono text-[9px] leading-relaxed select-text">
-                <pre>{circuitOutcome.firmwareCode}</pre>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

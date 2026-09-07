@@ -91,6 +91,15 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
     circuitStore.loadProjectCircuit(currentPid)
   }, [currentPid])
 
+  useEffect(() => {
+    const handleAutomationGenerated = (event: Event) => {
+      const project = (event as CustomEvent<{ projectId?: string }>).detail?.projectId
+      if (!project || project === currentPid) setDrawerOpen(true)
+    }
+    window.addEventListener('chip:automation-generated', handleAutomationGenerated)
+    return () => window.removeEventListener('chip:automation-generated', handleAutomationGenerated)
+  }, [currentPid])
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newProjectName.trim()) return
@@ -149,10 +158,10 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
   return (
     <div className={`flex flex-col h-full w-full bg-white overflow-hidden relative ${className}`}>
       {/* ── Studio Header / Action Toolbar ───────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-white shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
+      <div className="automation-toolbar flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-white shrink-0">
+        <div className="automation-studio-left flex items-center gap-3 min-w-0">
+          <div className="automation-project-controls flex items-center gap-2 min-w-0">
+            <span className="automation-studio-title text-xs font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
               Automation Studio
             </span>
           </div>
@@ -160,7 +169,7 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
           <div className="w-px h-4 bg-slate-200" />
 
           {/* Project Switcher */}
-          <div className="flex items-center gap-2">
+          <div className="automation-studio-actions flex items-center gap-2">
             <span className="text-[11px] font-medium text-slate-400">Project</span>
             <CleanDropdown
               value={currentPid}
@@ -196,7 +205,7 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
         </div>
 
         {/* Right Action: Toggle Simulation & Outcomes Drawer */}
-        <div className="flex items-center gap-2">
+          <div className="automation-project-switcher flex items-center gap-2">
           <button
             onClick={() => setDrawerOpen((prev) => !prev)}
             className={`w-8 h-8 flex items-center justify-center rounded-lg border transition cursor-pointer shadow-2xs ${
