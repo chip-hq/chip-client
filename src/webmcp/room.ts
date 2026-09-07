@@ -35,22 +35,22 @@ AUTONOMOUS WORKFLOW (Execute immediately without waiting for confirmation):
     - read_serial_logs: Read live real-time serial terminal output
     - read_job_status: Check compilation & flash pipeline progress
     - read_dashboard_state: Full snapshot of dashboard & visualizer state
-    - list_projects: List workspace projects and circuit statuses
-    - get_project: Get project metadata & active circuit version
-    - generate_circuit: Programmatically generate and persist an immutable circuit version (SKiDL + KiCad)
-    - get_current_circuit: Retrieve active circuit definition, components, and netlist
-    - get_circuit_version: Retrieve a specific historic circuit version
-    - list_circuit_versions: List all saved versions for a project
-    - validate_circuit: Run SKiDL electrical rules check (ERC) on the circuit
-    - get_components: List all components in the active circuit
-    - get_connections: List all electrical connections & nets in the active circuit
-    - search_components: Search available KiCad symbol libraries
+    - list_projects: List workspace automation projects and their statuses
+    - get_project: Get project metadata & active automation version
+    - generate_automation: Programmatically generate and persist an immutable automation version
+    - get_current_automation: Retrieve the active automation definition, components, and connections
+    - get_automation_version: Retrieve a specific historic automation version
+    - list_automation_versions: List all saved versions for a project
+    - validate_automation: Run electrical rules check (ERC) on the automation
+    - get_components: List all components in the active automation
+    - get_connections: List all connections & nets in the active automation
+    - search_components: Search available component libraries
     - get_component: Get component metadata and ref prefix
     - get_component_pins: Get exact pin numbers, names, and electrical functions
-    - list_circuit_artifacts: List generated netlist and manifest files
-    - get_circuit_artifact: Retrieve artifact file content (e.g. circuit.net)
-    - test_circuit: Run baseline hardware circuit generation test
-    - health_check: Verify SKiDL and KiCad symbol library availability`
+    - list_automation_artifacts: List generated netlist and manifest files
+    - get_automation_artifact: Retrieve artifact file content
+    - test_automation: Run baseline hardware automation generation test
+    - health_check: Verify automation libraries and component availability`
 }
 
 // Backward-compatibility aliases

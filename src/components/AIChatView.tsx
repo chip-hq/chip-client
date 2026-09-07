@@ -18,7 +18,7 @@ const FALLBACK_MODELS: DropdownOption[] = [
 ]
 
 interface AIChatViewProps {
-  onNavigateToCircuit?: (projectId?: string) => void
+  onNavigateToStudio?: (projectId?: string) => void
   compact?: boolean
 }
 
@@ -68,7 +68,7 @@ function saveMessages(pid: string, msgs: MessageItem[]) {
   } catch {}
 }
 
-export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, compact = false }) => {
+export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, compact = false }) => {
   const circuitState = useCircuitStore()
   const [projects, setProjects] = useState<Array<{ projectId: string; name: string }>>([])
   const [currentPid, setCurrentPid] = useState<string>(circuitState.projectId || '')
@@ -127,9 +127,17 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
 
         if (projRes?.projects?.length) {
           setProjects(projRes.projects)
-          const firstPid = projRes.projects[0].projectId
-          setCurrentPid(firstPid)
-          setMessages(loadSavedMessages(firstPid))
+          // Prefer the project already active in the store; only fall back to first
+          const storeId = circuitStore.getState().projectId
+          const activePid = storeId && projRes.projects.some((p: { projectId: string }) => p.projectId === storeId)
+            ? storeId
+            : projRes.projects[0].projectId
+          setCurrentPid(activePid)
+          setMessages(loadSavedMessages(activePid))
+          // Sync store if it was empty
+          if (!storeId) {
+            circuitStore.setProject(activePid)
+          }
         }
 
         if (modelRes?.models?.length) {
@@ -328,9 +336,9 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
             </button>
 
             {/* Open in Automation Studio */}
-            {onNavigateToCircuit && (
+            {onNavigateToStudio && (
               <button
-                onClick={() => onNavigateToCircuit(currentPid)}
+                onClick={() => onNavigateToStudio(currentPid)}
                 className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition cursor-pointer"
               >
                 <svg className="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

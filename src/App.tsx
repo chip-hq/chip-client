@@ -19,7 +19,7 @@ import { HistoryView } from './components/HistoryView'
 import { setDashboardActionProvider, setDashboardSnapshotProvider } from './webmcp/tools'
 import { buildAgentPrompt, getWebMCPUrl } from './webmcp/room'
 import { AgentSidebar } from './components/AgentSidebar'
-import { CircuitViewer } from './circuit'
+import { AutomationStudio } from './circuit'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -1349,7 +1349,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               </svg>
             </button>
             <span className="text-xs font-semibold text-black tracking-tight capitalize">
-              {currentTab === 'circuit'
+              {currentTab === 'automation'
                 ? 'Automation Studio'
                 : currentTab === 'history'
                 ? 'Job History'
@@ -1407,14 +1407,14 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
         {/* Scrollable Body + Agent Sidebar */}
         <div className="flex flex-1 overflow-hidden">
-          {/* TAB: CIRCUIT STUDIO */}
-          <div className={`flex-1 flex flex-col overflow-hidden bg-white ${currentTab === 'circuit' ? '' : 'hidden'}`}>
-            <CircuitViewer />
+          {/* TAB: AUTOMATION STUDIO */}
+          <div className={`flex-1 flex flex-col overflow-hidden bg-white ${currentTab === 'automation' ? '' : 'hidden'}`}>
+            <AutomationStudio />
           </div>
 
-          <main className={`flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5] ${currentTab === 'circuit' ? 'hidden' : ''}`}>
+          <main className={`flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5] ${currentTab === 'automation' ? 'hidden' : ''}`}>
           <div className="max-w-5xl mx-auto space-y-4 pb-6">
-            {/* TAB: CIRCUIT STUDIO placeholder (rendered above) */}
+            {/* TAB: AUTOMATION STUDIO rendered above */}
 
             {/* TAB 1: MAIN AUTOMATED AGENT DASHBOARD */}
             {currentTab === 'dashboard' && (
@@ -1819,7 +1819,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         </div>
 
         {/* Bottom-docked Log Console (Dashboard & Manual tabs) */}
-        {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'circuit' && (
+        {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'automation' && (
           <BottomConsole
             log={log}
             onClearLog={() => setLog([])}

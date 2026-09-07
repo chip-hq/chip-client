@@ -93,15 +93,15 @@ class CircuitStore {
   private layoutRedoStack: LayoutSnapshot[] = []
 
   private state: CircuitState = {
-    projectId: 'project-1',
+    projectId: '',
     circuit: null,
     versions: [],
     currentVersion: 0,
     selectedVersion: 0,
     selectedComponent: null,
     selectedNet: null,
-    layoutPositions: getStoredLayout('project-1'),
-    layoutRotations: getStoredRotations('project-1'),
+    layoutPositions: {},
+    layoutRotations: {},
     loading: false,
     generating: false,
     error: null,

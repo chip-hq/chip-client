@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { User } from 'firebase/auth'
 import chipLogo from '../assets/ChipLogo.png'
 
-export type TabType = 'dashboard' | 'circuit' | 'manual' | 'history' | 'setup'
+export type TabType = 'dashboard' | 'automation' | 'manual' | 'history' | 'setup'
 
 interface SidebarProps {
   user: User
@@ -59,24 +59,18 @@ export function Sidebar({
         />
       )}
 
-      {/* Main Sidebar Wrapper */}
+      {/* Main Sidebar Panel */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 bg-[#f5f5f5] border-r border-[#e5e5e5] flex flex-col justify-between p-4 transform transition-all duration-200 ease-in-out select-none shrink-0 overflow-hidden ${
-          isMobileOpen ? 'translate-x-0 shadow-2xl w-56' : '-translate-x-full w-56'
-        } ${
-          desktopOpen
-            ? 'md:translate-x-0 md:w-56 md:opacity-100'
-            : 'md:translate-x-0 md:w-0 md:p-0 md:opacity-0 md:border-r-0 md:pointer-events-none'
-        }`}
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#f5f5f5] border-r border-[#e5e5e5] h-screen transition-all duration-200 ease-in-out select-none ${
+          isMobileOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0'
+        } ${desktopOpen ? 'md:w-56' : 'md:hidden'}`}
       >
-        {/* Top Section: Logo & Nav */}
-        <div className="space-y-4 min-w-[192px]">
-          {/* Logo & Product Name + Close */}
-          <div className="flex items-center gap-2.5 px-2">
-            <img src={chipLogo} alt="Chip logo" className="h-6 w-auto object-contain" />
-            <span className="text-[15px] font-semibold text-black tracking-tight">Chip</span>
-            <span className="text-[9px] font-medium tracking-wide uppercase px-1.5 py-0.5 rounded bg-[#ebebeb] text-[#555555]">
-              Beta
+        <div className="flex flex-col h-full p-2.5">
+          {/* Header with App Logo & Collapse */}
+          <div className="flex items-center gap-2 px-2 py-2 mb-2">
+            <img src={chipLogo} alt="Chip" className="h-6 w-auto object-contain" />
+            <span className="text-[11px] font-mono px-1.5 py-0.2 bg-[#ebebeb] border border-[#d8d8d8] text-[#555] rounded">
+              BETA
             </span>
             <button
               type="button"
@@ -116,9 +110,9 @@ export function Sidebar({
             </button>
 
             <button
-              onClick={() => { onSelectTab('circuit'); setIsMobileOpen(false) }}
+              onClick={() => { onSelectTab('automation'); setIsMobileOpen(false) }}
               className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
-                currentTab === 'circuit'
+                currentTab === 'automation'
                   ? 'bg-[#ebebeb] text-black font-semibold'
                   : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
               }`}

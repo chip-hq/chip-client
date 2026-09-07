@@ -7,7 +7,6 @@
 import React, { useEffect, useState } from 'react'
 import { circuitStore, useCircuitStore } from './store'
 import { AutomationCanvas } from './AutomationCanvas'
-import { CircuitCanvas } from './CircuitCanvas'
 import { listProjectsApi, createProjectApi, deleteProjectApi } from './api'
 import { CleanDropdown, type DropdownOption } from '../components/CleanDropdown'
 
@@ -26,7 +25,7 @@ interface ProjectItem {
   updatedAt: string | null
 }
 
-export const CircuitViewer: React.FC<CircuitViewerProps> = ({
+export const AutomationStudio: React.FC<CircuitViewerProps> = ({
   projectId: initialProjectId = '',
   className = '',
 }) => {
@@ -38,7 +37,6 @@ export const CircuitViewer: React.FC<CircuitViewerProps> = ({
   const [newProjectDesc, setNewProjectDesc] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
   const [deletingProject, setDeletingProject] = useState(false)
-  const [canvasMode, setCanvasMode] = useState<'automation' | 'schematic'>('automation')
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const circuitState = useCircuitStore()
@@ -195,60 +193,27 @@ export const CircuitViewer: React.FC<CircuitViewerProps> = ({
               </button>
             )}
           </div>
-
-          <div className="w-px h-4 bg-slate-200" />
-
-          {/* Mode Switcher: Automation Flow vs Schematic Canvas */}
-          <div className="flex p-0.5 bg-slate-100 rounded-lg border border-slate-200">
-            <button
-              onClick={() => setCanvasMode('automation')}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition cursor-pointer ${
-                canvasMode === 'automation'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Automation Flow
-            </button>
-            <button
-              onClick={() => setCanvasMode('schematic')}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition cursor-pointer flex items-center gap-1.5 ${
-                canvasMode === 'schematic'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <span>Schematic Canvas</span>
-              {Boolean(circuitState.circuit?.components?.length) && (
-                <span className="text-[9px] px-1 py-0.2 bg-slate-200 text-slate-700 rounded-full font-mono font-bold">
-                  {circuitState.circuit?.components?.length}
-                </span>
-              )}
-            </button>
-          </div>
         </div>
 
-        {/* Right Action: Toggle Simulation & Outcomes Drawer (shown in Automation mode) */}
-        {canvasMode === 'automation' && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setDrawerOpen((prev) => !prev)}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg border transition cursor-pointer shadow-2xs ${
-                drawerOpen
-                  ? 'bg-slate-100 text-slate-900 border-slate-300 shadow-xs'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-              title="Toggle Simulation & Outcomes Panel"
-              aria-label="Toggle Simulation & Outcomes Panel"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={1.8} />
-                <path strokeWidth={1.8} d="M15 3v18" />
-                <path strokeLinecap="round" strokeWidth={1.8} d="M18 7.5h.01M18 12h.01M18 16.5h.01" />
-              </svg>
-            </button>
-          </div>
-        )}
+        {/* Right Action: Toggle Simulation & Outcomes Drawer */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDrawerOpen((prev) => !prev)}
+            className={`w-8 h-8 flex items-center justify-center rounded-lg border transition cursor-pointer shadow-2xs ${
+              drawerOpen
+                ? 'bg-slate-100 text-slate-900 border-slate-300 shadow-xs'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+            title="Toggle Simulation & Outcomes Panel"
+            aria-label="Toggle Simulation & Outcomes Panel"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={1.8} />
+              <path strokeWidth={1.8} d="M15 3v18" />
+              <path strokeLinecap="round" strokeWidth={1.8} d="M18 7.5h.01M18 12h.01M18 16.5h.01" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* ── Main Canvas Area ─────────────────────────────────────────────── */}
@@ -275,26 +240,6 @@ export const CircuitViewer: React.FC<CircuitViewerProps> = ({
                 Create First Project
               </button>
             </div>
-          ) : canvasMode === 'schematic' ? (
-            <CircuitCanvas
-              circuit={circuitState.circuit}
-              layoutPositions={circuitState.layoutPositions}
-              layoutRotations={circuitState.layoutRotations}
-              selectedRef={circuitState.selectedComponent?.ref}
-              selectedNet={circuitState.selectedNet}
-              onSelectComponent={(comp) => circuitStore.selectComponent(comp)}
-              onSelectNet={(net) => circuitStore.selectNet(net)}
-              onMoveComponent={(ref, x, y) => circuitStore.moveComponent(ref, x, y)}
-              onRotateComponent={(ref, delta) => circuitStore.rotateComponent(ref, delta)}
-              onRemoveComponent={(ref) => circuitStore.removeComponent(ref, 'UI')}
-              onConnectPins={(params) => circuitStore.connectPins(params, 'UI')}
-              onDisconnectPins={(params) => circuitStore.disconnectPins(params, 'UI')}
-              onRenameNet={(oldNet, newNet) => circuitStore.renameNet(oldNet, newNet, 'UI')}
-              onUndo={() => circuitStore.undo()}
-              onRedo={() => circuitStore.redo()}
-              canUndo={circuitState.canUndo}
-              canRedo={circuitState.canRedo}
-            />
           ) : (
             <AutomationCanvas
               circuit={circuitState.circuit}
@@ -344,7 +289,7 @@ export const CircuitViewer: React.FC<CircuitViewerProps> = ({
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Briefly describe what this circuit does..."
+                  placeholder="Briefly describe what this automation does..."
                   value={newProjectDesc}
                   onChange={(e) => setNewProjectDesc(e.target.value)}
                   className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg outline-hidden focus:border-slate-500 transition"
@@ -416,3 +361,5 @@ export const CircuitViewer: React.FC<CircuitViewerProps> = ({
     </div>
   )
 }
+
+export const CircuitViewer = AutomationStudio

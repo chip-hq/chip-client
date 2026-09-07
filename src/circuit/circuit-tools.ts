@@ -861,3 +861,9 @@ export function registerCircuitWebMCPTools(): void {
       )
   })
 }
+/**
+ * Registers all automation & project WebMCP tools.
+ */
+export function registerAutomationWebMCPTools(): void {
+  registerCircuitWebMCPTools()
+}
