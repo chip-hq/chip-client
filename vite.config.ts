@@ -6,6 +6,10 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    port: 5173,
+    hmr: {
+      overlay: false,
+    },
     // Firebase signInWithPopup polls popup.closed to detect a dismissed window.
     // Without this COOP value Chrome logs "Cross-Origin-Opener-Policy policy would
     // block the window.closed call" on every sign-in. Sign-in still works either

@@ -1,0 +1,26 @@
+{
+  "RF_Module:ESP32-WROOM-32": {
+    "status": "manufacturer_verified",
+    "verifiedAt": "2026-09-02",
+    "manufacturer": "Espressif Systems",
+    "sourceTitle": "ESP32-WROOM-32 Datasheet v3.7",
+    "sourceUrl": "https://documentation.espressif.com/esp32-wroom-32_datasheet_en.html",
+    "notes": [
+      "KiCad pin 2 is named VDD; Espressif names the same module power pin 3V3.",
+      "KiCad includes pin 39 as GND exposed pad; Espressif schematic/diagram identifies Pin.39 as GND.",
+      "Pins 17-22 are connected to internal SPI flash and are not recommended for general use."
+    ],
+    "displayPinNameOverrides": {
+      "2": "3V3",
+      "39": "GND / EPAD"
+    },
+    "pinWarnings": {
+      "17": "Internal SPI flash connection; not recommended for general use.",
+      "18": "Internal SPI flash connection; not recommended for general use.",
+      "19": "Internal SPI flash connection; not recommended for general use.",
+      "20": "Internal SPI flash connection; not recommended for general use.",
+      "21": "Internal SPI flash connection; not recommended for general use.",
+      "22": "Internal SPI flash connection; not recommended for general use."
+    }
+  }
+}

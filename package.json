@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "catalog:kicad": "node scripts/generate-kicad-catalog.mjs",
     "typecheck": "tsc -b",
     "preview": "vite preview"
   },

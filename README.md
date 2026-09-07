@@ -56,6 +56,8 @@ await window.__chipWebMCP.postAgentMessage({ message: "ESP32 connected and ready
 
 Claude can then call: `list_devices`, `compile_firmware`, `flash_device`, `get_status`
 
+`compile_firmware` accepts an optional `libraries` array (PlatformIO Registry names, e.g. `["adafruit/Adafruit GFX Library", "adafruit/Adafruit SSD1306"]`) for third-party deps. Omit it for stock ESP32 core-only builds.
+
 For the in-browser WebMCP room flow, copy the WebMCP Agent Room Prompt from the dashboard and paste it into a WebMCP-capable agent browser. The agent can then use the client WebMCP tools listed above to interact with the live dashboard.
 
 ---

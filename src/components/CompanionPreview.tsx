@@ -4,15 +4,22 @@ interface CompanionPreviewProps {
   htmlContent: string | null
   jobTitle?: string
   recentSerialLine?: string | null
+  /** Fill parent height instead of fixed 360px (used in bottom console) */
+  fill?: boolean
 }
 
-export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine }: CompanionPreviewProps) {
+export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine, fill = false }: CompanionPreviewProps) {
   const [key, setKey] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
   const [liveDataCount, setLiveDataCount] = useState(0)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const handleReload = () => setKey((prev) => prev + 1)
+  const shellClass = fullscreen
+    ? 'fixed inset-4 z-50 shadow-2xl'
+    : fill
+      ? 'h-full min-h-0 rounded-none'
+      : 'h-[360px]'
 
   // Forward every new serial line from the board into the companion iframe via postMessage
   useEffect(() => {
@@ -46,16 +53,16 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine }: Co
   // No companion compiled yet — clean idle state
   if (!htmlContent) {
     return (
-      <div className="flex flex-col bg-[#141414] border border-[#2a2a2a] rounded h-[360px] font-mono select-none">
-        <div className="h-8 bg-[#1f1f1f] border-b border-[#2a2a2a] px-3 flex items-center justify-between text-xs text-[#888888]">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#525252]" />
-            <span className="text-[11px] text-[#737373] font-medium">Board Companion Preview</span>
+      <div className={`flex flex-col bg-[#141414] font-mono select-none ${fill ? 'border-0' : 'border border-[#2a2a2a] rounded'} ${shellClass}`}>
+        <div className="h-8 bg-[#1f1f1f] border-b border-[#2a2a2a] px-3 flex items-center justify-between text-xs text-[#888888] shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-[#525252] shrink-0" />
+            <span className="text-[11px] text-[#737373] font-medium truncate">Board Companion Preview</span>
           </div>
-          <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-[#525252]">No companion</span>
+          <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-[#525252] shrink-0">No companion</span>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-2">
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-6 gap-2 min-h-0 overflow-auto">
           <div className="text-xs text-[#525252] font-medium">No companion compiled yet</div>
           <div className="text-[11px] text-[#404040] leading-relaxed max-w-xs">
             Connect your board, then ask Claude to compile and flash a sketch.
@@ -64,9 +71,9 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine }: Co
           </div>
         </div>
 
-        <div className="border-t border-[#1f1f1f] px-3 py-2 text-[10px] text-[#3a3a3a] flex justify-between">
+        <div className="border-t border-[#1f1f1f] px-3 py-2 text-[10px] text-[#3a3a3a] flex flex-col sm:flex-row sm:justify-between gap-1 shrink-0">
           <span>Awaiting firmware compilation</span>
-          <span>Board → USB → Serial → Preview</span>
+          <span className="hidden sm:inline">Board → USB → Serial → Preview</span>
         </div>
       </div>
     )
@@ -74,20 +81,20 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine }: Co
 
   // Companion HTML available — render it and pipe live serial board data in
   return (
-    <div className={`flex flex-col bg-[#141414] border border-[#2a2a2a] rounded overflow-hidden ${fullscreen ? 'fixed inset-4 z-50 shadow-2xl' : 'h-[360px]'}`}>
+    <div className={`flex flex-col bg-[#141414] overflow-hidden ${fill ? 'border-0' : 'border border-[#2a2a2a] rounded'} ${shellClass}`}>
       {/* Top Bar */}
-      <div className="h-8 bg-[#1f1f1f] border-b border-[#2a2a2a] px-3 flex items-center justify-between text-xs text-[#888888] select-none">
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${liveDataCount > 0 ? 'bg-[#16a34a] animate-pulse' : 'bg-[#eab308]'}`} />
-          <span className="font-mono text-[11px] text-[#e5e5e5] font-medium truncate max-w-[220px]">
+      <div className="h-8 bg-[#1f1f1f] border-b border-[#2a2a2a] px-3 flex items-center justify-between text-xs text-[#888888] select-none shrink-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${liveDataCount > 0 ? 'bg-[#16a34a] animate-pulse' : 'bg-[#eab308]'}`} />
+          <span className="font-mono text-[11px] text-[#e5e5e5] font-medium truncate">
             {jobTitle || 'Board Companion Preview'}
           </span>
-          <span className="text-[10px] bg-[#22c55e]/10 text-[#4ade80] px-1.5 py-0.5 rounded border border-[#22c55e]/20 font-mono">
+          <span className="hidden sm:inline text-[10px] bg-[#22c55e]/10 text-[#4ade80] px-1.5 py-0.5 rounded border border-[#22c55e]/20 font-mono shrink-0">
             Preview
           </span>
           {liveDataCount > 0 && (
-            <span className="text-[10px] bg-[#3b82f6]/10 text-[#60a5fa] px-1.5 py-0.5 rounded border border-[#3b82f6]/20 font-mono">
-              Live from board · {liveDataCount} lines
+            <span className="hidden md:inline text-[10px] bg-[#3b82f6]/10 text-[#60a5fa] px-1.5 py-0.5 rounded border border-[#3b82f6]/20 font-mono shrink-0">
+              Live · {liveDataCount}
             </span>
           )}
         </div>
@@ -123,25 +130,25 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine }: Co
       {/* Main Content Area: Visualizer + Live Hardware Terminal */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0 bg-[#0d0d0d]">
         {/* Visualizer iframe */}
-        <div className="flex-1 border-b md:border-b-0 md:border-r border-[#222222] relative flex flex-col min-h-[180px]">
+        <div className="flex-1 border-b md:border-b-0 md:border-r border-[#222222] relative flex flex-col min-h-0">
           <iframe
             key={key}
             ref={iframeRef}
             srcDoc={htmlContent}
             title="Board Companion Preview"
             sandbox="allow-scripts allow-forms allow-modals"
-            className="w-full flex-1 border-none bg-[#0d0d0d]"
+            className="w-full flex-1 border-none bg-[#0d0d0d] min-h-0"
           />
         </div>
 
         {/* Live Hardware Terminal Monitor */}
-        <div className="w-full md:w-80 flex flex-col bg-[#111111] shrink-0 font-mono text-[11px]">
-          <div className="h-7 bg-[#181818] border-b border-[#222222] px-3 flex items-center justify-between text-[#888888]">
+        <div className="w-full md:w-72 lg:w-80 flex flex-col bg-[#111111] shrink-0 font-mono text-[11px] min-h-[96px] md:min-h-0 max-h-[40%] md:max-h-none">
+          <div className="h-7 bg-[#181818] border-b border-[#222222] px-3 flex items-center justify-between text-[#888888] shrink-0">
             <span className="text-[10px] uppercase tracking-wider text-[#737373] font-semibold">Live Board Stream</span>
             <span className="text-[10px] text-[#22c55e]">USB 115200</span>
           </div>
 
-          <div className="flex-1 p-2.5 overflow-y-auto space-y-1 text-[#a3a3a3] select-text">
+          <div className="flex-1 p-2.5 overflow-y-auto space-y-1 text-[#a3a3a3] select-text min-h-0">
             <div className="text-[#525252]">[HARDWARE] Listening on Web Serial…</div>
             {recentSerialLine && !recentSerialLine.startsWith('[FLASH') && !recentSerialLine.startsWith('[INFO') && (
               <div className="text-[#4ade80] break-all">
@@ -156,11 +163,12 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine }: Co
       </div>
 
       {/* Live data status bar */}
-      <div className="bg-[#141414] border-t border-[#1f1f1f] px-3 py-1.5 flex items-center justify-between text-[10px] font-mono text-[#555555]">
-        <span>ESP32 Flash Memory → USB Serial → Live Visualizer</span>
+      <div className="bg-[#141414] border-t border-[#1f1f1f] px-3 py-1.5 flex items-center justify-between gap-2 text-[10px] font-mono text-[#555555] shrink-0">
+        <span className="truncate hidden sm:inline">ESP32 → USB Serial → Visualizer</span>
+        <span className="truncate sm:hidden">USB Serial</span>
         {liveDataCount > 0
-          ? <span className="text-[#22c55e]">Streaming real-time hardware telemetry</span>
-          : <span className="text-[#eab308]">Awaiting next serial frame…</span>
+          ? <span className="text-[#22c55e] shrink-0">Streaming</span>
+          : <span className="text-[#eab308] shrink-0">Awaiting frame…</span>
         }
       </div>
     </div>

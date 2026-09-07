@@ -12,7 +12,7 @@ import type { User } from 'firebase/auth'
 import { useFirebaseAuth } from './components/useAuth'
 import { AuthorizeModal } from './components/AuthorizeModal'
 import { SettingsModal } from './components/SettingsModal'
-import { CompanionPreview } from './components/CompanionPreview'
+import { BottomConsole } from './components/BottomConsole'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
@@ -26,8 +26,11 @@ const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
 const BAUD_RATES = [9600, 74880, 115200, 230400, 460800, 921600]
 
 // Production Railway endpoints
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || 'https://chip-backend.up.railway.app').replace(/\/+$/, '')
-const MCP_URL = (import.meta.env.VITE_MCP_URL || 'https://chip-mcp-server.up.railway.app').replace(/\/+$/, '') + '/mcp'
+export const DEFAULT_BACKEND_URL = 'https://chip-backend.up.railway.app'
+export const DEFAULT_MCP_URL = 'https://chip-mcp-server.up.railway.app'
+
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, '')
+const MCP_URL = (import.meta.env.VITE_MCP_URL || DEFAULT_MCP_URL).replace(/\/+$/, '') + '/mcp'
 const WS_URL = BACKEND_URL.replace(/^http/, 'ws')
 
 // ── Domain types ────────────────────────────────────────────────────────────
@@ -441,16 +444,24 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [cloudConnected, setCloudConnected] = useState(false)
   const [agentConnected, setAgentConnected] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    return localStorage.getItem('chip_sidebar_open') !== 'false'
+  })
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard')
   const [setupSubTab, setSetupSubTab] = useState<'webmcp' | 'mcp'>('webmcp')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [agentSidebarOpen, setAgentSidebarOpen] = useState(false)
 
-  // Auto-open agent sidebar whenever an agent posts a message
+  // Auto-open agent sidebar whenever an agent posts a message or requested by user action
   useEffect(() => {
-    const handler = () => setAgentSidebarOpen(true)
-    window.addEventListener('chip:agent-message', handler)
-    return () => window.removeEventListener('chip:agent-message', handler)
+    const handleMsg = () => setAgentSidebarOpen(true)
+    const handleOpen = () => setAgentSidebarOpen(true)
+    window.addEventListener('chip:agent-message', handleMsg)
+    window.addEventListener('chip:open-agent', handleOpen)
+    return () => {
+      window.removeEventListener('chip:agent-message', handleMsg)
+      window.removeEventListener('chip:open-agent', handleOpen)
+    }
   }, [])
   const [activeConsoleTab, setActiveConsoleTab] = useState<'log' | 'preview'>('log')
   const [activeCompanionHtml, setActiveCompanionHtml] = useState<string | null>(null)
@@ -464,6 +475,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     return localStorage.getItem('chip_auto_reset') !== 'false'
   })
   const autoResetRef = useRef(autoReset)
+  const [oledPreviewEnabled, setOledPreviewEnabled] = useState(() => {
+    return localStorage.getItem('chip_oled_preview_enabled') === 'true'
+  })
   const [recentSerialLine, setRecentSerialLine] = useState<string | null>(null)
 
   const handleToggleCompanion = useCallback((enabled: boolean) => {
@@ -478,6 +492,12 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     autoResetRef.current = enabled
     localStorage.setItem('chip_auto_reset', enabled ? 'true' : 'false')
     showAlert('info', `Automatic Board Reset ${enabled ? 'enabled' : 'disabled'}`, 'Settings Updated')
+  }, [showAlert])
+
+  const handleToggleOledPreview = useCallback((enabled: boolean) => {
+    setOledPreviewEnabled(enabled)
+    localStorage.setItem('chip_oled_preview_enabled', enabled ? 'true' : 'false')
+    showAlert('info', `OLED Preview ${enabled ? 'enabled' : 'disabled'}`, 'Settings Updated')
   }, [showAlert])
 
   const uid = user.uid
@@ -576,7 +596,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
   const transportRef = useRef<Transport | null>(null)
   const loaderRef = useRef<ESPLoader | null>(null)
-  const logEndRef = useRef<HTMLDivElement | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const serialDrainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -667,10 +686,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       return next
     })
   }, [])
-
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [log])
 
   const [terminal] = useState<IEspLoaderTerminal>(() => ({
     clean: () => setLog([]),
@@ -930,12 +945,20 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null
     let disposed = false
+    let retryCount = 0
+    let targetWsUrl = WS_URL
 
     function connectWs() {
       if (disposed) return
+
+      // If local dev server isn't running and failed 2x, gracefully fallback to live Railway backend
+      if (retryCount >= 2 && targetWsUrl.includes('localhost')) {
+        targetWsUrl = DEFAULT_BACKEND_URL.replace(/^http/, 'ws')
+      }
+
       try {
         const query = uid ? `?userId=${encodeURIComponent(uid)}&email=${encodeURIComponent(email || '')}` : ''
-        ws = new WebSocket(`${WS_URL}${query}`)
+        ws = new WebSocket(`${targetWsUrl}${query}`)
         wsRef.current = ws
 
         ws.onopen = () => {
@@ -943,6 +966,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             ws?.close()
             return
           }
+          retryCount = 0
           setCloudConnected(true)
           ws?.send(
             JSON.stringify({
@@ -1010,7 +1034,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             heartbeatInterval = null
           }
           if (disposed) return
-          reconnectTimeout = setTimeout(connectWs, 3000)
+          retryCount++
+          const backoffDelay = Math.min(30_000, 2_000 * Math.pow(1.35, Math.min(retryCount, 6)))
+          reconnectTimeout = setTimeout(connectWs, backoffDelay)
         }
 
         ws.onerror = () => {
@@ -1018,7 +1044,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         }
       } catch {
         setCloudConnected(false)
-        reconnectTimeout = setTimeout(connectWs, 3000)
+        retryCount++
+        const backoffDelay = Math.min(30_000, 2_000 * Math.pow(1.35, Math.min(retryCount, 6)))
+        reconnectTimeout = setTimeout(connectWs, backoffDelay)
       }
     }
 
@@ -1275,6 +1303,11 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         agentConnected={agentConnected}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
+        desktopOpen={sidebarOpen}
+        onDesktopOpenChange={(open) => {
+          setSidebarOpen(open)
+          localStorage.setItem('chip_sidebar_open', open ? 'true' : 'false')
+        }}
       />
 
       {/* Settings Modal */}
@@ -1285,6 +1318,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         onToggleCompanion={handleToggleCompanion}
         autoReset={autoReset}
         onToggleAutoReset={handleToggleAutoReset}
+        oledPreviewEnabled={oledPreviewEnabled}
+        onToggleOledPreview={handleToggleOledPreview}
         backendUrl={BACKEND_URL}
         authToken={null}
       />
@@ -1296,18 +1331,26 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         <header className="h-12 border-none bg-transparent flex items-center justify-between px-4 md:px-8 shrink-0">
           <div className="flex items-center gap-3">
             <button
-              className="md:hidden text-[#666666] hover:text-black p-1 -ml-1 rounded"
-              onClick={() => setIsMobileOpen(true)}
+              className={`${sidebarOpen ? 'md:hidden' : ''} text-[#666666] hover:text-black p-1 -ml-1 rounded hover:bg-[#ebebeb] transition-colors cursor-pointer`}
+              onClick={() => {
+                if (window.matchMedia('(min-width: 768px)').matches) {
+                  setSidebarOpen(true)
+                  localStorage.setItem('chip_sidebar_open', 'true')
+                } else {
+                  setIsMobileOpen(true)
+                }
+              }}
+              title="Open sidebar"
+              aria-label="Open sidebar"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="18" x2="21" y2="18" />
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M9 3v18" />
               </svg>
             </button>
             <span className="text-xs font-semibold text-black tracking-tight capitalize">
               {currentTab === 'circuit'
-                ? 'Circuit Studio'
+                ? 'Automation Studio'
                 : currentTab === 'history'
                 ? 'Job History'
                 : currentTab === 'manual'
@@ -1342,9 +1385,13 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             </button>
 
             <button
-              onClick={() => setAgentSidebarOpen(true)}
-              className="h-7 px-2.5 bg-white hover:bg-[#ebebeb] border border-[#e5e5e5] text-[#444444] hover:text-black rounded text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-              title="Open Agent sidebar"
+              onClick={() => setAgentSidebarOpen((prev) => !prev)}
+              className={`h-7 px-2.5 border rounded text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                agentSidebarOpen
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white hover:bg-[#ebebeb] border-[#e5e5e5] text-[#444444] hover:text-black'
+              }`}
+              title="Toggle Agent sidebar"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -1360,15 +1407,13 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
         {/* Scrollable Body + Agent Sidebar */}
         <div className="flex flex-1 overflow-hidden">
-          {/* TAB: CIRCUIT STUDIO — full-bleed, no padding, fills remaining viewport */}
-          {currentTab === 'circuit' && (
-            <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
-              <CircuitViewer projectId="project-1" />
-            </div>
-          )}
+          {/* TAB: CIRCUIT STUDIO */}
+          <div className={`flex-1 flex flex-col overflow-hidden bg-white ${currentTab === 'circuit' ? '' : 'hidden'}`}>
+            <CircuitViewer />
+          </div>
 
           <main className={`flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5] ${currentTab === 'circuit' ? 'hidden' : ''}`}>
-          <div className="max-w-5xl mx-auto space-y-4 pb-12">
+          <div className="max-w-5xl mx-auto space-y-4 pb-6">
             {/* TAB: CIRCUIT STUDIO placeholder (rendered above) */}
 
             {/* TAB 1: MAIN AUTOMATED AGENT DASHBOARD */}
@@ -1757,65 +1802,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               </div>
             )}
 
-            {/* Log Console & Live Companion Preview (Dashboard & Manual tabs) */}
-            {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'circuit' && (
-              <section className="card">
-                <div className="loghead">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setActiveConsoleTab('log')}
-                      className={`text-xs font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer ${
-                        activeConsoleTab === 'log'
-                          ? 'bg-black text-white'
-                          : 'text-[#666666] hover:text-black hover:bg-[#f3f3f3]'
-                      }`}
-                    >
-                      Serial Logs
-                    </button>
-                    <button
-                      onClick={() => setActiveConsoleTab('preview')}
-                      className={`text-xs font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-1.5 ${
-                        activeConsoleTab === 'preview'
-                          ? 'bg-black text-white'
-                          : 'text-[#666666] hover:text-black hover:bg-[#f3f3f3]'
-                      }`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#16a34a]" />
-                      <span>Live AI Companion</span>
-                      {activeCompanionHtml && (
-                        <span className="text-[10px] bg-[#f59e0b] text-white px-1 py-0.2 rounded font-mono">
-                          Live
-                        </span>
-                      )}
-                    </button>
-                  </div>
-
-                  {activeConsoleTab === 'log' && (
-                    <button className="ghost sm" onClick={() => setLog([])}>
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {activeConsoleTab === 'log' ? (
-                  <pre className="console">
-                    {log.length === 0 && <span className="muted">Waiting for actions…</span>}
-                    {log.map((l, i) => (
-                      <div key={i}>{l}</div>
-                    ))}
-                    <div ref={logEndRef} />
-                  </pre>
-                ) : (
-                  <div className="mt-3">
-                    <CompanionPreview
-                      htmlContent={activeCompanionHtml}
-                      jobTitle={activeCompanionTitle || undefined}
-                      recentSerialLine={recentSerialLine}
-                    />
-                  </div>
-                )}
-              </section>
-            )}
           </div>
           </main>
 
@@ -1831,6 +1817,20 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             serialLogs={log}
           />
         </div>
+
+        {/* Bottom-docked Log Console (Dashboard & Manual tabs) */}
+        {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'circuit' && (
+          <BottomConsole
+            log={log}
+            onClearLog={() => setLog([])}
+            activeTab={activeConsoleTab}
+            onTabChange={setActiveConsoleTab}
+            companionHtml={activeCompanionHtml}
+            companionTitle={activeCompanionTitle}
+            recentSerialLine={recentSerialLine}
+            oledPreviewEnabled={oledPreviewEnabled}
+          />
+        )}
       </div>
     </div>
   )

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { User } from 'firebase/auth'
 import chipLogo from '../assets/ChipLogo.png'
 
-export type TabType = 'dashboard' | 'manual' | 'history' | 'setup'
+export type TabType = 'dashboard' | 'circuit' | 'manual' | 'history' | 'setup'
 
 interface SidebarProps {
   user: User
@@ -14,6 +14,8 @@ interface SidebarProps {
   agentConnected?: boolean
   isMobileOpen: boolean
   setIsMobileOpen: (open: boolean) => void
+  desktopOpen: boolean
+  onDesktopOpenChange: (open: boolean) => void
 }
 
 export function Sidebar({
@@ -26,6 +28,8 @@ export function Sidebar({
   agentConnected = false,
   isMobileOpen,
   setIsMobileOpen,
+  desktopOpen,
+  onDesktopOpenChange,
 }: SidebarProps) {
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -43,6 +47,8 @@ export function Sidebar({
 
   const initials = (user.displayName || user.email || 'U')[0].toUpperCase()
 
+  const closeDesktop = () => onDesktopOpenChange(false)
+
   return (
     <>
       {/* Mobile Drawer Overlay */}
@@ -55,26 +61,43 @@ export function Sidebar({
 
       {/* Main Sidebar Wrapper */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-56 bg-[#f5f5f5] flex flex-col justify-between p-4 transform transition-transform duration-200 ease-in-out select-none shrink-0 ${
-          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        className={`fixed md:static inset-y-0 left-0 z-50 bg-[#f5f5f5] border-r border-[#e5e5e5] flex flex-col justify-between p-4 transform transition-all duration-200 ease-in-out select-none shrink-0 overflow-hidden ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl w-56' : '-translate-x-full w-56'
+        } ${
+          desktopOpen
+            ? 'md:translate-x-0 md:w-56 md:opacity-100'
+            : 'md:translate-x-0 md:w-0 md:p-0 md:opacity-0 md:border-r-0 md:pointer-events-none'
         }`}
       >
-        {/* Top Section: Brand + Navigation + Connected Agents */}
-        <div className="space-y-6">
-          {/* App Brand Header */}
+        {/* Top Section: Logo & Nav */}
+        <div className="space-y-4 min-w-[192px]">
+          {/* Logo & Product Name + Close */}
           <div className="flex items-center gap-2.5 px-2">
-            <img
-              src={chipLogo}
-              alt="Chip Logo"
-              className="w-6 h-6 object-contain rounded shrink-0 shadow-xs"
-            />
-            <span className="font-semibold text-sm tracking-tight text-black">
-              Chip
+            <img src={chipLogo} alt="Chip logo" className="h-6 w-auto object-contain" />
+            <span className="text-[15px] font-semibold text-black tracking-tight">Chip</span>
+            <span className="text-[9px] font-medium tracking-wide uppercase px-1.5 py-0.5 rounded bg-[#ebebeb] text-[#555555]">
+              Beta
             </span>
+            <button
+              type="button"
+              className="ml-auto text-[#888888] hover:text-black p-1 rounded hover:bg-[#ebebeb] transition-colors cursor-pointer"
+              onClick={() => {
+                setIsMobileOpen(false)
+                closeDesktop()
+              }}
+              title="Close sidebar"
+              aria-label="Close sidebar"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M9 3v18" />
+                <path d="m16 15-3-3 3-3" />
+              </svg>
+            </button>
           </div>
 
-          {/* Navigation Items */}
-          <nav className="space-y-1">
+          {/* Navigation Links */}
+          <nav className="space-y-0.5 pt-1">
             <button
               onClick={() => { onSelectTab('dashboard'); setIsMobileOpen(false) }}
               className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
@@ -91,6 +114,23 @@ export function Sidebar({
               </svg>
               <span>Dashboard</span>
             </button>
+
+            <button
+              onClick={() => { onSelectTab('circuit'); setIsMobileOpen(false) }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
+                currentTab === 'circuit'
+                  ? 'bg-[#ebebeb] text-black font-semibold'
+                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M9 9h6v6H9z" />
+                <path d="M9 1v2m6-2v2M9 21v2m6-2v2M1 9h2m-2 6h2M21 9h2m-2 6h2" />
+              </svg>
+              <span>Automation Studio</span>
+            </button>
+
 
             <button
               onClick={() => { onSelectTab('history'); setIsMobileOpen(false) }}

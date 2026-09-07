@@ -7,6 +7,8 @@ interface SettingsModalProps {
   onToggleCompanion: (enabled: boolean) => void
   autoReset: boolean
   onToggleAutoReset: (enabled: boolean) => void
+  oledPreviewEnabled: boolean
+  onToggleOledPreview: (enabled: boolean) => void
   backendUrl: string
   authToken?: string | null
 }
@@ -125,6 +127,8 @@ export function SettingsModal({
   onToggleCompanion,
   autoReset,
   onToggleAutoReset,
+  oledPreviewEnabled,
+  onToggleOledPreview,
   backendUrl,
   authToken,
 }: SettingsModalProps) {
@@ -192,6 +196,32 @@ export function SettingsModal({
                       aria-hidden="true"
                       className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
                         companionEnabled ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-b border-[#f5f5f5]">
+                  <div>
+                    <div className="text-xs font-medium text-black">OLED Preview</div>
+                    <div className="text-[11px] text-[#888888] mt-0.5 max-w-[220px]">
+                      Show the SH1106 OLED simulator in the Bluetooth panel
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={oledPreviewEnabled}
+                    onClick={() => onToggleOledPreview(!oledPreviewEnabled)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      oledPreviewEnabled ? 'bg-black' : 'bg-[#d1d5db]'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        oledPreviewEnabled ? 'translate-x-4' : 'translate-x-0'
                       }`}
                     />
                   </button>

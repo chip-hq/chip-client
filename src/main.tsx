@@ -3,8 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
 import { registerWebMCPTools } from './webmcp/tools'
+import { registerCircuitWebMCPTools } from './circuit'
 
-// Suppress noisy third-party browser extension and WebGPU warnings in dev console
+// Suppress noisy third-party browser extension, Vite HMR, and transient connection logs
 if (typeof window !== 'undefined') {
   const IGNORED_PATTERNS = [
     'MaxListenersExceededWarning',
@@ -14,6 +15,12 @@ if (typeof window !== 'undefined') {
     'requestAdapter',
     'AMADEUS_WALLET',
     'Cross-Origin-Opener-Policy',
+    'failed to connect to websocket',
+    '[vite] failed to connect',
+    'server-options.html#server-hmr',
+    'WebSocket connection to',
+    'chrome-extension://',
+    'Extension context invalidated',
   ]
 
   const originalWarn = console.warn
@@ -29,6 +36,14 @@ if (typeof window !== 'undefined') {
     if (IGNORED_PATTERNS.some((p) => msg.includes(p))) return
     originalError.apply(console, args)
   }
+
+  // Professional Console Branding
+  console.log(
+    '%c ⚡ CHIP %c Automation & ESP32 Platform %c Ready ',
+    'background:#10b981; color:#ffffff; font-weight:700; padding:2px 6px; border-radius:3px 0 0 3px;',
+    'background:#0f172a; color:#38bdf8; font-weight:600; padding:2px 6px;',
+    'background:#1e293b; color:#94a3b8; padding:2px 6px; border-radius:0 3px 3px 0;'
+  )
 }
 
 createRoot(document.getElementById('root')!).render(
@@ -37,7 +52,9 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-// Register CHIP's WebMCP tools once for the page lifetime.
+// Register CHIP's WebMCP tools (device + circuit) once for the page lifetime.
 // No-op in browsers without WebMCP (enable chrome://flags/#enable-webmcp-testing to test).
 registerWebMCPTools()
+registerCircuitWebMCPTools()
+
 

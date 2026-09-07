@@ -466,6 +466,7 @@ async function eraseBoard(): Promise<WebMCPToolResult> {
 export function registerWebMCPTools(): void {
   // Always register browser console hooks for WebMCP tool testing (dev + prod)
   window.__chipWebMCP = {
+    ...(window.__chipWebMCP || {}),
     listDevices,
     getBoardStatus,
     readSerialLogs,

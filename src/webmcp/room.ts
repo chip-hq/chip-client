@@ -25,16 +25,32 @@ AUTONOMOUS WORKFLOW (Execute immediately without waiting for confirmation):
 3. If the user says the board is connected, call 'get_board_status' again. If the user explicitly asks you to erase the board, call 'erase_board'. If you only recommend a clean flash, call 'set_agent_note' and 'request_user_action' using action "erase_board" first.
 4. Call 'read_serial_logs' to check live serial console output and provide recommendations or assist with firmware compilation.
 
-Exposed WebMCP Tools:
-- list_devices: List connected microcontroller hardware
-- get_board_status: Get hardware connection, baud rate & gateway status
-- post_agent_message: Post status updates or advice directly to the user's dashboard Live Digest sidebar (Proactive)
-- set_agent_note: Save persistent agent-visible guidance in the dashboard
-- request_user_action: Request structured hardware actions such as connect_board, press_reset, select_file, erase_board, open_serial_monitor, or check_wiring
-- erase_board: Actually erase the connected ESP32 flash when the user explicitly asks for it
-- read_serial_logs: Read live real-time serial terminal output
-- read_job_status: Check compilation & flash pipeline progress
-- read_dashboard_state: Full snapshot of dashboard & visualizer state`
+    Exposed WebMCP Tools:
+    - list_devices: List connected microcontroller hardware
+    - get_board_status: Get hardware connection, baud rate & gateway status
+    - post_agent_message: Post status updates or advice directly to the user's dashboard Live Digest sidebar
+    - set_agent_note: Save persistent agent-visible guidance in the dashboard
+    - request_user_action: Request structured hardware actions
+    - erase_board: Actually erase connected ESP32 flash
+    - read_serial_logs: Read live real-time serial terminal output
+    - read_job_status: Check compilation & flash pipeline progress
+    - read_dashboard_state: Full snapshot of dashboard & visualizer state
+    - list_projects: List workspace projects and circuit statuses
+    - get_project: Get project metadata & active circuit version
+    - generate_circuit: Programmatically generate and persist an immutable circuit version (SKiDL + KiCad)
+    - get_current_circuit: Retrieve active circuit definition, components, and netlist
+    - get_circuit_version: Retrieve a specific historic circuit version
+    - list_circuit_versions: List all saved versions for a project
+    - validate_circuit: Run SKiDL electrical rules check (ERC) on the circuit
+    - get_components: List all components in the active circuit
+    - get_connections: List all electrical connections & nets in the active circuit
+    - search_components: Search available KiCad symbol libraries
+    - get_component: Get component metadata and ref prefix
+    - get_component_pins: Get exact pin numbers, names, and electrical functions
+    - list_circuit_artifacts: List generated netlist and manifest files
+    - get_circuit_artifact: Retrieve artifact file content (e.g. circuit.net)
+    - test_circuit: Run baseline hardware circuit generation test
+    - health_check: Verify SKiDL and KiCad symbol library availability`
 }
 
 // Backward-compatibility aliases
