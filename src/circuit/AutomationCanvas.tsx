@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react'
+import type { CircuitDefinition } from './types'
 
 export interface WorkflowNode {
   id: string
@@ -17,8 +18,321 @@ export interface WorkflowConnection {
 }
 
 export interface AutomationCanvasProps {
+  circuit?: CircuitDefinition | null
+  projectId?: string
   isDrawerOpen?: boolean
   onToggleDrawer?: (open: boolean) => void
+  onAddComponentToCircuit?: (comp: { ref: string; name: string; lib: string; value: string }) => void
+}
+
+export function deriveWorkflowFromCircuit(
+  circuit?: CircuitDefinition | null,
+  projectId?: string
+): { nodes: WorkflowNode[]; connections: WorkflowConnection[] } {
+  if (!circuit || !circuit.components || circuit.components.length === 0) {
+    return { nodes: [], connections: [] }
+  }
+
+  // Retrieve any saved coordinates for this project
+  let savedLayout: Record<string, { x: number; y: number }> = {}
+  if (projectId) {
+    try {
+      const raw = localStorage.getItem(`automation_layout_${projectId}`)
+      if (raw) savedLayout = JSON.parse(raw)
+    } catch {}
+  }
+
+  const nodes: WorkflowNode[] = []
+  const connections: WorkflowConnection[] = []
+
+  // 1. Locate MCU / ESP32 Controller
+  const mcu = circuit.components.find((c) => {
+    const name = (c.name || '').toLowerCase()
+    const val = (c.value || '').toLowerCase()
+    const lib = (c.lib || '').toLowerCase()
+    return name.includes('esp32') || val.includes('esp32') || lib.includes('rf_module') || c.ref.toUpperCase() === 'U1'
+  })
+
+  const mcuId = mcu ? `node-${mcu.ref}` : 'node-trigger-esp32'
+  const mcuPos = savedLayout[mcuId] || { x: 80, y: 160 }
+  nodes.push({
+    id: mcuId,
+    name: mcu ? `${mcu.value || mcu.name || 'ESP32'} Controller` : 'Schedule Trigger',
+    category: 'trigger',
+    type: 'timer',
+    x: mcuPos.x,
+    y: mcuPos.y,
+    params: { rate: '2000ms', chip: mcu?.name || 'ESP32-WROOM-32' },
+  })
+
+  // 2. Classify other components
+  let sensorIdx = 0
+  let actuatorIdx = 0
+  let displayIdx = 0
+  let triggerIdx = 0
+
+  const compNodes: { ref: string; nodeId: string; category: WorkflowNode['category'] }[] = []
+
+  circuit.components.forEach((comp) => {
+    if (mcu && comp.ref.toUpperCase() === mcu.ref.toUpperCase()) return
+
+    const ref = comp.ref.toUpperCase()
+    const name = (comp.name || '').toLowerCase()
+    const val = (comp.value || '').toLowerCase()
+
+    // Pass-through resistors and bypass capacitors are part of hardware wiring
+    if ((ref.startsWith('R') && !name.includes('ldr')) || (ref.startsWith('C') && !name.includes('sensor'))) {
+      return
+    }
+
+    const nodeId = `node-${comp.ref}`
+
+    // Sensor: DHT
+    if (name.includes('dht') || val.includes('dht')) {
+      const pos = savedLayout[nodeId] || { x: 280, y: 120 + sensorIdx * 160 }
+      sensorIdx++
+      // Detect GPIO connection
+      let pinName = 'GPIO 4'
+      const conn = (circuit.connections || []).find((cn) => cn.nodes.some((n) => n.toUpperCase().startsWith(`${ref}.`)))
+      const espPin = conn?.nodes.find((n) => n.toUpperCase().startsWith('U1.') || (mcu && n.toUpperCase().startsWith(`${mcu.ref}.`)))
+      if (espPin) pinName = `GPIO ${espPin.split('.')[1].replace(/IO/i, '')}`
+
+      nodes.push({
+        id: nodeId,
+        name: `${comp.value || 'DHT22'} Sensor`,
+        category: 'sensor',
+        type: 'dht22',
+        x: pos.x,
+        y: pos.y,
+        params: { pin: pinName },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'sensor' })
+      return
+    }
+
+    // Sensor: LDR
+    if (name.includes('ldr') || val.includes('ldr') || name.includes('light') || val.includes('photo')) {
+      const pos = savedLayout[nodeId] || { x: 280, y: 120 + sensorIdx * 160 }
+      sensorIdx++
+      nodes.push({
+        id: nodeId,
+        name: 'LDR Light Sensor',
+        category: 'sensor',
+        type: 'ldr',
+        x: pos.x,
+        y: pos.y,
+        params: { pin: 'GPIO 34' },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'sensor' })
+      return
+    }
+
+    // Sensor: PIR Motion
+    if (name.includes('pir') || val.includes('pir') || name.includes('motion')) {
+      const pos = savedLayout[nodeId] || { x: 280, y: 120 + sensorIdx * 160 }
+      sensorIdx++
+      nodes.push({
+        id: nodeId,
+        name: 'PIR Motion Interrupt',
+        category: 'sensor',
+        type: 'pir',
+        x: pos.x,
+        y: pos.y,
+        params: { pin: 'GPIO 14' },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'sensor' })
+      return
+    }
+
+    // Actuator: Relay
+    if (name.includes('relay') || val.includes('relay')) {
+      const pos = savedLayout[nodeId] || { x: 680, y: 120 + actuatorIdx * 160 }
+      actuatorIdx++
+      nodes.push({
+        id: nodeId,
+        name: `${comp.value || '5V Relay'} Switch`,
+        category: 'actuator',
+        type: 'relay',
+        x: pos.x,
+        y: pos.y,
+        params: { pin: 'GPIO 26' },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'actuator' })
+      return
+    }
+
+    // Actuator: LED
+    if (ref.startsWith('D') || name.includes('led') || val.includes('led')) {
+      const pos = savedLayout[nodeId] || { x: 680, y: 120 + actuatorIdx * 160 }
+      actuatorIdx++
+      // Trace connected GPIO
+      let pinName = 'GPIO 2'
+      for (const cn of (circuit.connections || [])) {
+        if (cn.nodes.some((n) => n.toUpperCase().startsWith(`${ref}.`))) {
+          const directEsp = cn.nodes.find((n) => n.toUpperCase().startsWith('U1.') || (mcu && n.toUpperCase().startsWith(`${mcu.ref}.`)))
+          if (directEsp) {
+            pinName = `GPIO ${directEsp.split('.')[1].replace(/IO/i, '')}`
+            break
+          }
+          const rNode = cn.nodes.find((n) => n.toUpperCase().startsWith('R'))
+          if (rNode) {
+            const rRef = rNode.split('.')[0]
+            const rNet = (circuit.connections || []).find((c2) => c2 !== cn && c2.nodes.some((n) => n.toUpperCase().startsWith(`${rRef}.`)))
+            const rEsp = rNet?.nodes.find((n) => n.toUpperCase().startsWith('U1.') || (mcu && n.toUpperCase().startsWith(`${mcu.ref}.`)))
+            if (rEsp) {
+              pinName = `GPIO ${rEsp.split('.')[1].replace(/IO/i, '')}`
+              break
+            }
+          }
+        }
+      }
+      nodes.push({
+        id: nodeId,
+        name: `Status LED (${comp.ref})`,
+        category: 'actuator',
+        type: 'led',
+        x: pos.x,
+        y: pos.y,
+        params: { pin: pinName },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'actuator' })
+      return
+    }
+
+    // Actuator: Buzzer
+    if (name.includes('buzzer') || val.includes('buzzer')) {
+      const pos = savedLayout[nodeId] || { x: 680, y: 120 + actuatorIdx * 160 }
+      actuatorIdx++
+      nodes.push({
+        id: nodeId,
+        name: 'Piezo Buzzer',
+        category: 'actuator',
+        type: 'buzzer',
+        x: pos.x,
+        y: pos.y,
+        params: { pin: 'GPIO 15' },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'actuator' })
+      return
+    }
+
+    // Display: OLED
+    if (name.includes('oled') || val.includes('oled') || name.includes('ssd1306') || val.includes('ssd1306') || name.includes('128x64')) {
+      const pos = savedLayout[nodeId] || { x: 880, y: 120 + displayIdx * 160 }
+      displayIdx++
+      nodes.push({
+        id: nodeId,
+        name: 'SSD1306 OLED Display',
+        category: 'display',
+        type: 'oled',
+        x: pos.x,
+        y: pos.y,
+        params: { sda: 21, scl: 22 },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'display' })
+      return
+    }
+
+    // Trigger: Switch / Button
+    if (ref.startsWith('SW') || name.includes('switch') || name.includes('button')) {
+      const pos = savedLayout[nodeId] || { x: 80, y: 300 + triggerIdx * 160 }
+      triggerIdx++
+      nodes.push({
+        id: nodeId,
+        name: `Push Button (${comp.ref})`,
+        category: 'trigger',
+        type: 'pir',
+        x: pos.x,
+        y: pos.y,
+        params: { pin: 'GPIO 4' },
+      })
+      compNodes.push({ ref: comp.ref, nodeId, category: 'trigger' })
+      return
+    }
+
+    // Generic Actuator
+    const pos = savedLayout[nodeId] || { x: 680 + actuatorIdx * 160, y: 160 }
+    actuatorIdx++
+    nodes.push({
+      id: nodeId,
+      name: comp.value || comp.name || comp.ref,
+      category: 'actuator',
+      type: 'led',
+      x: pos.x,
+      y: pos.y,
+      params: { ref: comp.ref },
+    })
+    compNodes.push({ ref: comp.ref, nodeId, category: 'actuator' })
+  })
+
+  // Add logic node if both sensors & actuators exist
+  const hasSensors = compNodes.some((n) => n.category === 'sensor')
+  const hasActuators = compNodes.some((n) => n.category === 'actuator')
+  let logicNodeId: string | null = null
+
+  if (hasSensors && hasActuators) {
+    logicNodeId = 'node-logic-auto'
+    const logicPos = savedLayout[logicNodeId] || { x: 480, y: 160 }
+    nodes.push({
+      id: logicNodeId,
+      name: 'Threshold Logic Condition',
+      category: 'logic',
+      type: 'threshold',
+      x: logicPos.x,
+      y: logicPos.y,
+      params: { threshold: 28 },
+    })
+  }
+
+  // 3. Connect the flow
+  let connIdCounter = 1
+  if (hasSensors) {
+    // MCU -> Sensor
+    compNodes.filter((n) => n.category === 'sensor').forEach((s) => {
+      connections.push({
+        id: `c-auto-${connIdCounter++}`,
+        fromId: mcuId,
+        toId: s.nodeId,
+      })
+      if (logicNodeId) {
+        connections.push({
+          id: `c-auto-${connIdCounter++}`,
+          fromId: s.nodeId,
+          toId: logicNodeId,
+        })
+      }
+    })
+
+    if (logicNodeId) {
+      compNodes.filter((n) => n.category === 'actuator').forEach((a) => {
+        connections.push({
+          id: `c-auto-${connIdCounter++}`,
+          fromId: logicNodeId!,
+          toId: a.nodeId,
+        })
+      })
+    }
+  } else {
+    // MCU -> Actuator directly
+    compNodes.filter((n) => n.category === 'actuator').forEach((a) => {
+      connections.push({
+        id: `c-auto-${connIdCounter++}`,
+        fromId: mcuId,
+        toId: a.nodeId,
+      })
+    })
+  }
+
+  // Connect Displays
+  compNodes.filter((n) => n.category === 'display').forEach((d) => {
+    connections.push({
+      id: `c-auto-${connIdCounter++}`,
+      fromId: mcuId,
+      toId: d.nodeId,
+    })
+  })
+
+  return { nodes, connections }
 }
 
 const DEFAULT_NODES: WorkflowNode[] = [
@@ -143,8 +457,11 @@ function getNodeIcon(type: string) {
 }
 
 export function AutomationCanvas({
+  circuit,
+  projectId,
   isDrawerOpen: propDrawerOpen,
   onToggleDrawer,
+  onAddComponentToCircuit,
 }: AutomationCanvasProps = {}) {
   const [internalDrawerOpen, setInternalDrawerOpen] = useState(false)
   const isDrawerOpen = propDrawerOpen !== undefined ? propDrawerOpen : internalDrawerOpen
@@ -153,9 +470,28 @@ export function AutomationCanvas({
     setInternalDrawerOpen(open)
   }
 
-  // Initial starter flow with clean n8n square nodes
-  const [nodes, setNodes] = useState<WorkflowNode[]>(DEFAULT_NODES)
-  const [connections, setConnections] = useState<WorkflowConnection[]>(DEFAULT_CONNECTIONS)
+  // Derive initial flow from circuit if provided
+  const initialFlow = useMemo(() => {
+    if (circuit && circuit.components && circuit.components.length > 0) {
+      return deriveWorkflowFromCircuit(circuit, projectId)
+    }
+    return { nodes: [], connections: [] }
+  }, [circuit, projectId])
+
+  const [nodes, setNodes] = useState<WorkflowNode[]>(initialFlow.nodes)
+  const [connections, setConnections] = useState<WorkflowConnection[]>(initialFlow.connections)
+
+  // Auto-sync whenever circuit updates from AI or store
+  useEffect(() => {
+    if (circuit && circuit.components && circuit.components.length > 0) {
+      const derived = deriveWorkflowFromCircuit(circuit, projectId)
+      setNodes(derived.nodes)
+      setConnections(derived.connections)
+    } else if (circuit && (!circuit.components || circuit.components.length === 0)) {
+      setNodes([])
+      setConnections([])
+    }
+  }, [circuit, projectId])
   // Pan & Zoom state
   const [zoom, setZoom] = useState<number>(1)
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -327,6 +663,15 @@ export function AutomationCanvas({
   }
 
   const handleCanvasMouseUp = () => {
+    if (draggingNodeId && projectId) {
+      const layout: Record<string, { x: number; y: number }> = {}
+      nodes.forEach((n) => {
+        layout[n.id] = { x: n.x, y: n.y }
+      })
+      try {
+        localStorage.setItem(`automation_layout_${projectId}`, JSON.stringify(layout))
+      } catch {}
+    }
     setDraggingNodeId(null)
     setIsPanning(false)
   }
@@ -380,6 +725,11 @@ export function AutomationCanvas({
     setConnectingFromId(null)
     setHoveredConnId(null)
     setConnectingMousePos(null)
+    if (projectId) {
+      try {
+        localStorage.removeItem(`automation_layout_${projectId}`)
+      } catch {}
+    }
     resetZoom()
   }
 
@@ -390,6 +740,12 @@ export function AutomationCanvas({
     setHoveredConnId(null)
     setConnectingMousePos(null)
     resetZoom()
+
+    if (onAddComponentToCircuit) {
+      onAddComponentToCircuit({ ref: 'U1', name: 'ESP32-WROOM-32', lib: 'RF_Module', value: 'ESP32-WROOM-32' })
+      onAddComponentToCircuit({ ref: 'SEN1', name: 'DHT22', lib: 'Sensor', value: 'DHT22' })
+      onAddComponentToCircuit({ ref: 'K1', name: 'Relay', lib: 'Relay', value: '5V Relay' })
+    }
   }
 
   const handleAddNode = (
@@ -413,6 +769,25 @@ export function AutomationCanvas({
     }
     setNodes((prev) => [...prev, newNode])
     setIsAddMenuOpen(false)
+
+    if (onAddComponentToCircuit) {
+      const idx = nodes.length + 1
+      if (type === 'dht22') {
+        onAddComponentToCircuit({ ref: `SEN${idx}`, name: 'DHT22', lib: 'Sensor', value: 'DHT22' })
+      } else if (type === 'relay') {
+        onAddComponentToCircuit({ ref: `K${idx}`, name: 'Relay', lib: 'Relay', value: '5V Relay' })
+      } else if (type === 'led') {
+        onAddComponentToCircuit({ ref: `D${idx}`, name: 'LED', lib: 'Device', value: 'LED' })
+      } else if (type === 'buzzer') {
+        onAddComponentToCircuit({ ref: `BZ${idx}`, name: 'Buzzer', lib: 'Device', value: 'Piezo Buzzer' })
+      } else if (type === 'oled') {
+        onAddComponentToCircuit({ ref: `DS${idx}`, name: 'SSD1306_128x64', lib: 'Display_Graphic', value: 'SSD1306' })
+      } else if (type === 'pir') {
+        onAddComponentToCircuit({ ref: `SEN${idx}`, name: 'PIR', lib: 'Sensor', value: 'PIR Motion' })
+      } else if (type === 'ldr') {
+        onAddComponentToCircuit({ ref: `R${idx}`, name: 'LDR', lib: 'Device', value: 'LDR' })
+      }
+    }
   }
 
   const circuitOutcome = useMemo(() => {

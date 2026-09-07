@@ -296,7 +296,13 @@ export const CircuitViewer: React.FC<CircuitViewerProps> = ({
               canRedo={circuitState.canRedo}
             />
           ) : (
-            <AutomationCanvas isDrawerOpen={drawerOpen} onToggleDrawer={setDrawerOpen} />
+            <AutomationCanvas
+              circuit={circuitState.circuit}
+              projectId={circuitState.projectId}
+              isDrawerOpen={drawerOpen}
+              onToggleDrawer={setDrawerOpen}
+              onAddComponentToCircuit={(comp) => circuitStore.addComponent(comp, 'UI')}
+            />
           )}
         </div>
       </div>

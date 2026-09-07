@@ -7,7 +7,7 @@ import {
   type ChatMessage,
   type CircuitActionResult,
 } from '../circuit/api'
-import { circuitStore } from '../circuit/store'
+import { circuitStore, useCircuitStore } from '../circuit/store'
 import { CleanDropdown, type DropdownOption } from './CleanDropdown'
 
 const FALLBACK_MODELS: DropdownOption[] = [
@@ -32,23 +32,23 @@ interface MessageItem {
 
 const QUICK_PROMPTS = [
   'Add an ESP32 with an LED on GPIO 2 and 220Ω resistor to GND',
-  'Connect a pushbutton to GPIO 4 with pullup to GND',
-  'Add an I2C OLED display (SSD1306) to GPIO 21 (SDA) and GPIO 22 (SCL)',
-  'Wire a DHT22 temperature sensor to 3V3, GND, and GPIO 15',
-  'Add power filtering: 100nF and 10uF capacitors across 3V3 and GND',
+  'Add a DHT22 temperature sensor on GPIO 4 and a 5V relay on GPIO 26',
+  'Add an I2C OLED display (SSD1306) on GPIO 21 (SDA) and GPIO 22 (SCL)',
+  'Connect a pushbutton trigger to GPIO 14 with pullup to GND',
+  'Add a PIR motion sensor on GPIO 14 and piezo buzzer on GPIO 15',
 ]
 
 const WELCOME_MESSAGE: MessageItem = {
   id: 'welcome',
   role: 'assistant',
   content:
-    'Hello! I am your Hardware Circuit Design AI Assistant powered by Featherless.\n\nTell me what you want to build (e.g. *"Add an ESP32 with an LED on GPIO2 and a 220Ω resistor"*), and I will automatically add parts, wire nets, and update your circuit diagram in real time.',
+    'Hello! I am your Hardware Automation AI Assistant powered by Featherless.\n\nTell me what you want to build (e.g. *"Add an ESP32 with an LED on GPIO 2 and a 220Ω resistor to GND"*), and I will automatically add parts, wire connections, and update your automation canvas in real time.',
   timestamp: new Date(),
 }
 
 function loadSavedMessages(pid: string): MessageItem[] {
   try {
-    const raw = localStorage.getItem(`circuit_ai_chat_${pid || 'default'}`)
+    const raw = localStorage.getItem(`automation_ai_chat_${pid || 'default'}`)
     if (raw) {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -64,13 +64,14 @@ function loadSavedMessages(pid: string): MessageItem[] {
 
 function saveMessages(pid: string, msgs: MessageItem[]) {
   try {
-    localStorage.setItem(`circuit_ai_chat_${pid || 'default'}`, JSON.stringify(msgs))
+    localStorage.setItem(`automation_ai_chat_${pid || 'default'}`, JSON.stringify(msgs))
   } catch {}
 }
 
 export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, compact = false }) => {
+  const circuitState = useCircuitStore()
   const [projects, setProjects] = useState<Array<{ projectId: string; name: string }>>([])
-  const [currentPid, setCurrentPid] = useState<string>('')
+  const [currentPid, setCurrentPid] = useState<string>(circuitState.projectId || '')
   const [models, setModels] = useState<Array<{ id: string; name: string; units: number }>>([])
   const [selectedModel, setSelectedModel] = useState<string>('deepseek-ai/DeepSeek-V3.2')
   const [inputMessage, setInputMessage] = useState('')
@@ -142,23 +143,35 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
     init()
   }, [])
 
+  // Keep currentPid in sync with circuitStore's selected project
+  useEffect(() => {
+    if (circuitState.projectId && circuitState.projectId !== currentPid) {
+      setCurrentPid(circuitState.projectId)
+    }
+  }, [circuitState.projectId])
+
   const ensureProject = async (): Promise<string> => {
-    if (currentPid) return currentPid
+    const activePid = circuitState.projectId || currentPid
+    if (activePid) {
+      if (currentPid !== activePid) setCurrentPid(activePid)
+      return activePid
+    }
     try {
       const res = await createProjectApi({
-        name: 'AI Circuit Project',
-        description: 'Auto-created circuit project for AI prompt automation',
+        name: 'AI Automation Project',
+        description: 'Auto-created automation project for AI prompt automation',
       })
       if (res?.project?.projectId) {
         const newId = res.project.projectId
         setProjects((prev) => [...prev, { projectId: newId, name: res.project.name }])
         setCurrentPid(newId)
+        circuitStore.setProject(newId)
         return newId
       }
     } catch {
       // fallback
     }
-    return 'ai-circuit-project'
+    return 'ai-automation-project'
   }
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -195,13 +208,13 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
         const assistantMsg: MessageItem = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: res.reply || 'Circuit updated successfully.',
+          content: res.reply || 'Automation updated successfully.',
           actions: res.actions || [],
           timestamp: new Date(),
         }
         setMessages((prev) => [...prev, assistantMsg])
 
-        // Reload the circuit in CircuitStore so Circuit Studio is immediately updated!
+        // Reload the project in CircuitStore so Automation Studio is immediately updated!
         circuitStore.setProject(pid)
         if (res.newVersion) {
           circuitStore.loadProjectCircuit(pid, res.newVersion, true)
@@ -210,7 +223,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
         const errorMsg: MessageItem = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: `Error: ${res?.error || 'Failed to process circuit prompt. Please try again.'}`,
+          content: `Error: ${res?.error || 'Failed to process automation prompt. Please try again.'}`,
           timestamp: new Date(),
         }
         setMessages((prev) => [...prev, errorMsg])
@@ -265,12 +278,12 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                Circuit AI Assistant
+                Automation AI Assistant
                 <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
                   Featherless
                 </span>
               </h2>
-              <p className="text-[11px] text-slate-500">Natural language circuit schematic automation</p>
+              <p className="text-[11px] text-slate-500">Natural language hardware automation & workflow builder</p>
             </div>
           </div>
 
@@ -314,7 +327,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
               Clear
             </button>
 
-            {/* Open in Circuit Studio */}
+            {/* Open in Automation Studio */}
             {onNavigateToCircuit && (
               <button
                 onClick={() => onNavigateToCircuit(currentPid)}
@@ -324,7 +337,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
                   <rect width="18" height="18" x="3" y="3" rx="2" />
                   <path d="M9 9h6v6H9z" />
                 </svg>
-                Open Circuit Studio
+                Open Automation Studio
               </button>
             )}
           </div>
@@ -340,7 +353,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
           >
             <div className="flex items-center gap-1.5 mb-1 px-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                {msg.role === 'user' ? 'You' : 'Circuit Assistant'}
+                {msg.role === 'user' ? 'You' : 'Automation Assistant'}
               </span>
               <span className="text-[10px] text-slate-400">
                 {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -360,7 +373,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
               {msg.actions && msg.actions.length > 0 && (
                 <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-1.5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                    Executed Circuit Actions ({msg.actions.length})
+                    Executed Automation Actions ({msg.actions.length})
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {msg.actions.map((act, i) => (
@@ -382,8 +395,8 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
         {loading && (
           <div className="flex flex-col max-w-2xl mr-auto items-start">
             <div className="flex items-center gap-2 mb-1 px-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Circuit Assistant</span>
-              <span className="text-[10px] text-amber-500 font-medium">Generating circuit...</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Automation Assistant</span>
+              <span className="text-[10px] text-amber-500 font-medium">Generating automation...</span>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-xs px-4 py-3 shadow-xs">
               <div className="flex items-center gap-1.5">
@@ -431,7 +444,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToCircuit, com
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             disabled={loading}
-            placeholder={compact ? "Prompt AI to add/wire circuit..." : "Ask AI to design or wire a circuit (e.g. 'Add an ESP32 and wire an LED to GPIO 2 with 220Ω resistor')..."}
+            placeholder={compact ? "Prompt AI to build automation..." : "Ask AI to build or wire an automation (e.g. 'Add an ESP32 and wire an LED to GPIO 2 with 220Ω resistor')..."}
             className={`flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-hidden focus:border-slate-400 focus:bg-white transition ${
               compact ? 'px-3 py-2 text-[11px]' : 'px-4 py-2.5'
             }`}
