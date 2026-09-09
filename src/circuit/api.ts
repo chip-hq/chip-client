@@ -556,6 +556,23 @@ export interface CircuitActionResult {
   description: string
 }
 
+export interface AgentChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  actions?: CircuitActionResult[]
+  timestamp: string
+}
+
+export interface AgentChat {
+  chatId: string
+  projectId: string
+  title: string
+  messages: AgentChatMessage[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface CircuitChatResponse {
   success: boolean
   reply: string
@@ -580,7 +597,37 @@ export async function circuitChatApi(params: {
   return res.json()
 }
 
-/** 24. Get supported AI models */
+/** 24. List recent Agent Studio chats for a project */
+export async function listAgentChatsApi(projectId: string): Promise<{ chats: AgentChat[] }> {
+  const res = await fetchWithAuth(
+    `${getBackendUrl()}/api/circuit/chats?projectId=${encodeURIComponent(projectId)}`
+  )
+  return res.json()
+}
+
+/** 25. Create or update an Agent Studio chat */
+export async function saveAgentChatApi(params: {
+  chatId?: string
+  projectId: string
+  title?: string
+  messages: AgentChatMessage[]
+}): Promise<{ success: boolean; chat: AgentChat }> {
+  const res = await fetchWithAuth(`${getBackendUrl()}/api/circuit/chats`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+  return res.json()
+}
+
+/** 26. Delete an Agent Studio chat */
+export async function deleteAgentChatApi(chatId: string): Promise<{ success: boolean }> {
+  const res = await fetchWithAuth(`${getBackendUrl()}/api/circuit/chats/${encodeURIComponent(chatId)}`, {
+    method: 'DELETE',
+  })
+  return res.json()
+}
+
+/** 27. Get supported AI models */
 export async function fetchCircuitModelsApi(): Promise<{
   models: Array<{ id: string; name: string; units: number }>
 }> {

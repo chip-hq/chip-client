@@ -38,6 +38,16 @@ select,
   font-weight: 500;
 }
 
+.select-none {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.select-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* ── Custom Scrollbar ──────────────────────────────────────────────────────── */
 
 /* Firefox */

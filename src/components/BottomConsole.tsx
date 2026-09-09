@@ -168,17 +168,6 @@ export function BottomConsole({
 
       <div
         className="bottom-console-bar"
-        onClick={toggle}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            toggle()
-          }
-        }}
-        aria-expanded={open}
-        aria-label={open ? 'Collapse console' : 'Expand console'}
       >
         <div className="bottom-console-tabs" onClick={(e) => e.stopPropagation()} role="tablist">
           <button

@@ -5,8 +5,7 @@
  */
 
 import React, { useEffect, useState } from 'react'
-import { circuitStore, useCircuitStore } from './store'
-import { AutomationCanvas } from './AutomationCanvas'
+import { circuitStore } from './store'
 import { listProjectsApi, createProjectApi, deleteProjectApi } from './api'
 import { CleanDropdown, type DropdownOption } from '../components/CleanDropdown'
 
@@ -30,6 +29,7 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
   className = '',
 }) => {
   const [currentPid, setCurrentPid] = useState(initialProjectId)
+  const [openedProjectId, setOpenedProjectId] = useState(initialProjectId)
   const [projects, setProjects] = useState<ProjectItem[]>([])
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -37,10 +37,6 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
   const [newProjectDesc, setNewProjectDesc] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
   const [deletingProject, setDeletingProject] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-
-  const circuitState = useCircuitStore()
-
   // Global Undo / Redo keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -91,15 +87,6 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
     circuitStore.loadProjectCircuit(currentPid)
   }, [currentPid])
 
-  useEffect(() => {
-    const handleAutomationGenerated = (event: Event) => {
-      const project = (event as CustomEvent<{ projectId?: string }>).detail?.projectId
-      if (!project || project === currentPid) setDrawerOpen(true)
-    }
-    window.addEventListener('chip:automation-generated', handleAutomationGenerated)
-    return () => window.removeEventListener('chip:automation-generated', handleAutomationGenerated)
-  }, [currentPid])
-
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newProjectName.trim()) return
@@ -114,7 +101,7 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
         setNewProjectName('')
         setNewProjectDesc('')
         await loadProjects()
-        setCurrentPid(res.project.projectId)
+        openProject(res.project.projectId)
       }
     } catch (err) {
       alert('Failed to create project: ' + (err instanceof Error ? err.message : String(err)))
@@ -150,6 +137,12 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
 
   const activeProject = projects.find((p) => p.projectId === currentPid)
 
+  const openProject = (projectId: string) => {
+    setCurrentPid(projectId)
+    setOpenedProjectId(projectId)
+    window.history.pushState({}, '', `#/automation/project/${encodeURIComponent(projectId)}`)
+  }
+
   const projectOptions: DropdownOption[] = projects.map((p) => ({
     value: p.projectId,
     label: p.name || p.projectId,
@@ -174,7 +167,7 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
             <CleanDropdown
               value={currentPid}
               options={projectOptions}
-              onChange={setCurrentPid}
+              onChange={openProject}
               disabled={projects.length === 0}
               placeholder="No projects"
             />
@@ -204,28 +197,9 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
           </div>
         </div>
 
-        {/* Right Action: Toggle Simulation & Outcomes Drawer */}
-          <div className="automation-project-switcher flex items-center gap-2">
-          <button
-            onClick={() => setDrawerOpen((prev) => !prev)}
-            className={`w-8 h-8 flex items-center justify-center rounded-lg border transition cursor-pointer shadow-2xs ${
-              drawerOpen
-                ? 'bg-slate-100 text-slate-900 border-slate-300 shadow-xs'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title="Toggle Simulation & Outcomes Panel"
-            aria-label="Toggle Simulation & Outcomes Panel"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={1.8} />
-              <path strokeWidth={1.8} d="M15 3v18" />
-              <path strokeLinecap="round" strokeWidth={1.8} d="M18 7.5h.01M18 12h.01M18 16.5h.01" />
-            </svg>
-          </button>
-        </div>
       </div>
 
-      {/* ── Main Canvas Area ─────────────────────────────────────────────── */}
+      {/* ── Blank Automation Workspace ───────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 h-full relative">
           {projects.length === 0 ? (
@@ -249,14 +223,50 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
                 Create First Project
               </button>
             </div>
+          ) : openedProjectId ? (
+            <div className="h-full w-full bg-white" aria-label="Automation workspace">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Project Workspace</p>
+                  <h2 className="text-sm font-bold text-slate-800">{activeProject?.name || openedProjectId}</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenedProjectId('')
+                    window.history.pushState({}, '', '#/automation')
+                  }}
+                  className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  All Projects
+                </button>
+              </div>
+            </div>
           ) : (
-            <AutomationCanvas
-              circuit={circuitState.circuit}
-              projectId={circuitState.projectId}
-              isDrawerOpen={drawerOpen}
-              onToggleDrawer={setDrawerOpen}
-              onAddComponentToCircuit={(comp) => circuitStore.addComponent(comp, 'UI')}
-            />
+            <div className="flex h-full w-full items-start justify-start bg-slate-50/40 p-6">
+              <div className="grid w-full max-w-2xl grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-4">
+                {projects.map((project) => {
+                  const isActive = project.projectId === currentPid
+                  return (
+                    <button
+                      key={project.projectId}
+                      type="button"
+                      onClick={() => openProject(project.projectId)}
+                      className={`group flex aspect-square flex-col items-center justify-center rounded-xl border bg-white p-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-md ${
+                        isActive ? 'border-slate-400 ring-2 ring-slate-100' : 'border-slate-200'
+                      }`}
+                      title={`Open ${project.name || project.projectId}`}
+                    >
+                      <span className="mb-2 grid h-10 w-10 place-items-center rounded-lg bg-slate-900 text-sm font-bold text-white">
+                        {(project.name || project.projectId).slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="w-full truncate text-xs font-semibold text-slate-800">{project.name || project.projectId}</span>
+                      <span className="mt-1 text-[10px] text-slate-400">Open project</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -318,7 +328,7 @@ export const AutomationStudio: React.FC<CircuitViewerProps> = ({
                   disabled={creatingProject || !newProjectName.trim()}
                   className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition disabled:opacity-50 cursor-pointer"
                 >
-                  {creatingProject ? 'Creating...' : 'Create & Open Canvas'}
+                  {creatingProject ? 'Creating...' : 'Create & Open Project'}
                 </button>
               </div>
             </form>

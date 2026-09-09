@@ -197,7 +197,7 @@ export function Sidebar({
         {/* Bottom Section: Status & User Profile */}
         <div className="space-y-2 pt-4 border-t border-[#e5e5e5]">
           {/* Cloud Relay status badge */}
-          <div className="px-2.5 py-1.5 bg-white border border-[#e5e5e5] rounded flex items-center justify-between text-[11px]">
+          <div className="mx-1 px-2.5 py-1.5 bg-white border border-[#e5e5e5] rounded flex items-center justify-between text-[11px]">
             <div className="flex items-center gap-1.5">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#666666]">
                 <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
@@ -210,7 +210,7 @@ export function Sidebar({
           </div>
 
           {/* User Profile Card with animated dropdown */}
-          <div className="relative" ref={profileRef}>
+          <div className="relative mx-1" ref={profileRef}>
             {/* Animated dropdown — grows from the bottom of the card upward */}
             <div
               className="overflow-hidden transition-all duration-200 ease-in-out"

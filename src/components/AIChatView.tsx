@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import {
   circuitChatApi,
   fetchCircuitModelsApi,
+  listAgentChatsApi,
+  saveAgentChatApi,
+  deleteAgentChatApi,
+  type AgentChat,
+  type AgentChatMessage,
   type ChatMessage,
   type CircuitActionResult,
 } from '../circuit/api'
@@ -47,39 +52,27 @@ const WELCOME_MESSAGE: MessageItem = {
   id: 'welcome',
   role: 'assistant',
   content:
-    'Hello! I am your Hardware Automation AI Assistant powered by Featherless.\n\nTell me what you want to build (e.g. *"Add an ESP32 with an LED on GPIO 2 and a 220Ω resistor to GND"*), and I will automatically add parts, wire connections, and update your automation canvas in real time.',
+    'Hello! I am your project assistant powered by Featherless.\n\nAsk me about your current project, firmware, or connected device, and I will help you work through it.',
   timestamp: new Date(),
 }
 
 const GENERATION_STEPS = ['Building', 'Wiring', 'Powering', 'Polishing']
 
-function loadSavedMessages(pid: string): MessageItem[] {
-  try {
-    const raw = localStorage.getItem(`automation_ai_chat_${pid || 'default'}`)
-    if (raw) {
-      const parsed: unknown = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((message) => {
-          const item = message as Record<string, unknown>
-          return {
-            ...item,
-            timestamp: new Date(typeof item.timestamp === 'string' || typeof item.timestamp === 'number' ? item.timestamp : Date.now()),
-          } as MessageItem
-        })
-      }
-    }
-  } catch {
-    return [WELCOME_MESSAGE]
-  }
-  return [WELCOME_MESSAGE]
+function toApiMessages(messages: MessageItem[]): AgentChatMessage[] {
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    actions: message.actions,
+    timestamp: message.timestamp.toISOString(),
+  }))
 }
 
-function saveMessages(pid: string, msgs: MessageItem[]) {
-  try {
-    localStorage.setItem(`automation_ai_chat_${pid || 'default'}`, JSON.stringify(msgs))
-  } catch {
-    return
-  }
+function fromApiMessages(messages: AgentChatMessage[]): MessageItem[] {
+  return messages.map((message) => ({
+    ...message,
+    timestamp: new Date(message.timestamp),
+  }))
 }
 
 export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, compact = false }) => {
@@ -90,8 +83,12 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
   const [inputMessage, setInputMessage] = useState('')
   const [vineMentioned, setVineMentioned] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [recentChats, setRecentChats] = useState<AgentChat[]>([])
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null)
+  const [chatToDelete, setChatToDelete] = useState<AgentChat | null>(null)
+  const [chatDeleteError, setChatDeleteError] = useState<string | null>(null)
   const [generationStep, setGenerationStep] = useState(GENERATION_STEPS[0])
-  const [messages, setMessages] = useState<MessageItem[]>(() => loadSavedMessages(''))
+  const [messages, setMessages] = useState<MessageItem[]>([WELCOME_MESSAGE])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -125,18 +122,24 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
     return () => window.clearInterval(interval)
   }, [loading])
 
-  // Save messages whenever they change
+  // Load recent chats from the database when the active project changes.
   useEffect(() => {
-    if (messages.length > 1 || (messages.length === 1 && messages[0].id !== 'welcome')) {
-      saveMessages(currentPid, messages)
-    }
-  }, [messages, currentPid])
-
-  // Load project messages when currentPid changes
-  useEffect(() => {
-    if (currentPid) {
-      setMessages(loadSavedMessages(currentPid))
-    }
+    if (!currentPid) return
+    let cancelled = false
+    listAgentChatsApi(currentPid).then(({ chats }) => {
+      if (cancelled) return
+      setRecentChats(chats)
+      const latest = chats[0]
+      setCurrentChatId(latest?.chatId || null)
+      setMessages(latest?.messages?.length ? fromApiMessages(latest.messages) : [WELCOME_MESSAGE])
+    }).catch(() => {
+      if (!cancelled) {
+        setRecentChats([])
+        setCurrentChatId(null)
+        setMessages([WELCOME_MESSAGE])
+      }
+    })
+    return () => { cancelled = true }
   }, [currentPid])
 
   // Load available models; the circuit store remains the single project source.
@@ -168,6 +171,50 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
     return activePid
   }
 
+  const handleNewChat = async () => {
+    const pid = getActiveProject()
+    if (!pid || loading) return
+    try {
+      const result = await saveAgentChatApi({
+        projectId: pid,
+        title: 'New Chat',
+        messages: toApiMessages([WELCOME_MESSAGE]),
+      })
+      setCurrentChatId(result.chat.chatId)
+      setRecentChats((prev) => [result.chat, ...prev.filter((chat) => chat.chatId !== result.chat.chatId)])
+      setMessages([WELCOME_MESSAGE])
+      setInputMessage('')
+    } catch {
+      setMessages([{
+        ...WELCOME_MESSAGE,
+        content: 'Unable to create a new chat right now. Please try again.',
+      }])
+    }
+  }
+
+  const handleSelectChat = (chatId: string) => {
+    const chat = recentChats.find((item) => item.chatId === chatId)
+    if (!chat) return
+    setCurrentChatId(chat.chatId)
+    setMessages(chat.messages.length ? fromApiMessages(chat.messages) : [WELCOME_MESSAGE])
+  }
+
+  const handleDeleteChat = async () => {
+    if (!chatToDelete) return
+    setChatDeleteError(null)
+    try {
+      await deleteAgentChatApi(chatToDelete.chatId)
+      const remaining = recentChats.filter((chat) => chat.chatId !== chatToDelete.chatId)
+      setRecentChats(remaining)
+      const nextChat = remaining[0]
+      setCurrentChatId(nextChat?.chatId || null)
+      setMessages(nextChat?.messages?.length ? fromApiMessages(nextChat.messages) : [WELCOME_MESSAGE])
+      setChatToDelete(null)
+    } catch (error) {
+      setChatDeleteError(error instanceof Error ? error.message : 'Unable to delete chat.')
+    }
+  }
+
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputMessage).trim()
     if (!text || loading) return
@@ -177,7 +224,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
       setMessages((prev) => [...prev, {
         id: Math.random().toString(36).substring(2, 9),
         role: 'assistant',
-        content: 'Open an automation project first. I will build the flow in that project.',
+        content: 'Open a project first so I can help with it.',
         timestamp: new Date(),
       }])
       return
@@ -192,12 +239,13 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
       timestamp: new Date(),
     }
 
-    setMessages((prev) => [...prev, userMsg])
+    const nextMessages = [...messages, userMsg]
+    setMessages(nextMessages)
     setLoading(true)
 
     try {
       // Convert history for API
-      const history: ChatMessage[] = messages
+      const history: ChatMessage[] = nextMessages
         .filter((m) => m.id !== 'welcome')
         .map((m) => ({ role: m.role, content: m.content }))
 
@@ -212,11 +260,19 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         const assistantMsg: MessageItem = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: `${res.reply || 'Automation updated successfully.'}\n\nCanvas outputs are ready: Simulation, Pinout Map, and Wiring Guide.`,
+          content: res.reply || 'Project updated successfully.',
           actions: res.actions || [],
           timestamp: new Date(),
         }
-        setMessages((prev) => [...prev, assistantMsg])
+        const completedMessages = [...nextMessages, assistantMsg]
+        setMessages(completedMessages)
+        const savedChat = await saveAgentChatApi({
+          chatId: currentChatId || undefined,
+          projectId: pid,
+          messages: toApiMessages(completedMessages),
+        })
+        setCurrentChatId(savedChat.chat.chatId)
+        setRecentChats((prev) => [savedChat.chat, ...prev.filter((chat) => chat.chatId !== savedChat.chat.chatId)])
 
         // Reload the project in CircuitStore so Automation Studio is immediately updated!
         circuitStore.setProject(pid)
@@ -228,7 +284,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         const errorMsg: MessageItem = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: `Error: ${res?.error || 'Failed to process automation prompt. Please try again.'}`,
+          content: `Error: ${res?.error || 'I could not process that request. Please try again.'}`,
           timestamp: new Date(),
         }
         setMessages((prev) => [...prev, errorMsg])
@@ -259,12 +315,12 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                Automation AI Assistant
+                Project Assistant
                 <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
                   Featherless
                 </span>
               </h2>
-              <p className="text-[11px] text-slate-500">Natural language hardware automation & workflow builder</p>
+              <p className="text-[11px] text-slate-500">Project and device assistance</p>
             </div>
           </div>
 
@@ -285,23 +341,19 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
               />
             </div>
 
-            {/* Clear Chat Button */}
+            {/* New Chat Button */}
             <button
-              onClick={() => {
-                const fresh = [WELCOME_MESSAGE]
-                setMessages(fresh)
-                saveMessages(currentPid, fresh)
-              }}
+              onClick={() => void handleNewChat()}
               className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-lg border border-slate-200 hover:border-rose-200 transition cursor-pointer"
-              title="Clear chat history for this project"
+              title="Start a new database-backed chat"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14M5 12h14" />
               </svg>
-              Clear
+              New Chat
             </button>
 
-            {/* Open in Automation Studio */}
+            {/* Open project workspace */}
             {onNavigateToStudio && (
               <button
                 onClick={() => onNavigateToStudio(currentPid)}
@@ -311,9 +363,85 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
                   <rect width="18" height="18" x="3" y="3" rx="2" />
                   <path d="M9 9h6v6H9z" />
                 </svg>
-                Open Automation Studio
+                Open Project
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {compact && (
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-2.5 py-2">
+          <select
+            value={currentChatId || ''}
+            onChange={(event) => handleSelectChat(event.target.value)}
+            disabled={recentChats.length === 0}
+            aria-label="Recent chats"
+            className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-600 outline-hidden focus:border-slate-400"
+          >
+            {recentChats.length === 0 && <option value="">Recent Chat</option>}
+            {recentChats.length > 0 && <option value="" disabled>Recent Chat</option>}
+            {recentChats.map((chat) => (
+              <option key={chat.chatId} value={chat.chatId}>{chat.title}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              const chat = recentChats.find((item) => item.chatId === currentChatId)
+              if (chat) {
+                setChatDeleteError(null)
+                setChatToDelete(chat)
+              }
+            }}
+            disabled={!currentChatId || loading}
+            aria-label="Delete selected chat"
+            title="Delete selected chat"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 6h18M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M10 11v6M14 11v6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleNewChat()}
+            disabled={!currentPid || loading}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Start a new database-backed chat"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14M5 12h14" />
+            </svg>
+            New Chat
+          </button>
+        </div>
+      )}
+
+      {chatToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+            <h2 className="text-sm font-bold text-slate-800">Delete chat?</h2>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              Delete <span className="font-semibold text-slate-700">{chatToDelete.title}</span>? This cannot be undone.
+            </p>
+            {chatDeleteError && <p className="mt-3 rounded-md bg-rose-50 px-2.5 py-2 text-xs text-rose-700">{chatDeleteError}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setChatToDelete(null)}
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteChat()}
+                className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -349,7 +477,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
               {msg.actions && msg.actions.length > 0 && (
                 <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-1.5">
                   <span className="text-[10px] font-bold text-slate-500 tracking-wider block">
-                    Executed Automation Actions ({msg.actions.length})
+                    Activity ({msg.actions.length})
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {msg.actions.map((act, i) => (
@@ -400,7 +528,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
               className="inline-flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-1.5 text-[10px] font-medium text-slate-600 shadow-2xs hover:border-slate-300 hover:bg-slate-200"
               title={`Remove ${projectMentionLabel} mention`}
             >
-              <span className="grid h-4 w-4 place-items-center rounded-[4px] bg-slate-800 text-[8px] font-bold text-white">P</span>
+              <span className="grid h-4 w-4 place-items-center rounded-sm bg-slate-800 text-[8px] font-bold text-white">P</span>
               <span className="truncate">{projectMentionLabel}</span>
               <span className="text-slate-400">×</span>
             </button>

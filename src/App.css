@@ -37,13 +37,6 @@
     text-overflow: ellipsis;
   }
 
-  .automation-outcome-drawer {
-    max-height: 48%;
-    min-height: 12rem;
-    border-left: 0;
-    border-top: 1px solid var(--border);
-  }
-
   .history-shell {
     height: auto;
     min-height: calc(100vh - 7rem);
@@ -525,6 +518,7 @@
   background: #ffffff;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
   flex-shrink: 0;
   box-sizing: border-box;
