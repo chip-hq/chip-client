@@ -37,6 +37,10 @@
     text-overflow: ellipsis;
   }
 
+  .app-header-actions .cloud-status {
+    display: none;
+  }
+
   .history-shell {
     height: auto;
     min-height: calc(100vh - 7rem);
@@ -46,19 +50,22 @@
     display: flex;
     align-items: flex-start;
     position: relative;
-    min-height: 4.5rem;
+    min-height: 0;
     gap: 0;
     padding-left: 0.75rem;
     padding-right: 0.75rem;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
   }
 
   .automation-studio-left {
     display: flex;
-    align-items: center;
-    gap: 0.3rem;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.45rem;
     width: 100%;
     min-width: 0;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
   }
 
   .automation-project-controls {
@@ -66,11 +73,7 @@
   }
 
   .automation-studio-title {
-    display: block;
-    flex: 0 0 auto;
-    max-width: 4.6rem;
-    font-size: 0.62rem;
-    line-height: 0.75rem;
+    display: none;
   }
 
   .automation-studio-left > .w-px {
@@ -102,13 +105,25 @@
   }
 
   .automation-studio-actions {
-    position: absolute;
-    top: 2.65rem;
-    left: 0.75rem;
+    position: static;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 0.35rem;
   }
 
-  .automation-project-switcher .text-\[11px\] {
-    display: none;
+  .automation-studio-actions > span {
+    flex: 0 0 auto;
+  }
+
+  .automation-studio-actions > button {
+    max-width: 100%;
+  }
+
+  .automation-studio-actions > div {
+    min-width: 0;
   }
 
   .agent-drawer {

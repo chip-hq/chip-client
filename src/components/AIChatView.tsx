@@ -274,12 +274,11 @@ export const AIChatView: React.FC<AIChatViewProps> = ({ onNavigateToStudio, comp
         setCurrentChatId(savedChat.chat.chatId)
         setRecentChats((prev) => [savedChat.chat, ...prev.filter((chat) => chat.chatId !== savedChat.chat.chatId)])
 
-        // Reload the project in CircuitStore so Automation Studio is immediately updated!
+        // Keep the active project synchronized for the remaining project tools.
         circuitStore.setProject(pid)
         if (res.newVersion) {
           await circuitStore.loadProjectCircuit(pid, res.newVersion, true)
         }
-        window.dispatchEvent(new CustomEvent('chip:automation-generated', { detail: { projectId: pid, version: res.newVersion } }))
       } else {
         const errorMsg: MessageItem = {
           id: Math.random().toString(36).substring(2, 9),

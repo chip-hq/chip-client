@@ -1393,7 +1393,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               <span>Agent</span>
             </button>
 
-            <span className={`text-[11px] px-2 py-0.5 border border-[#e5e5e5] bg-white font-mono rounded ${cloudConnected ? 'text-[#16a34a] font-medium' : 'text-[#888888]'}`}>
+            <span className={`cloud-status text-[11px] px-2 py-0.5 border border-[#e5e5e5] bg-white font-mono rounded ${cloudConnected ? 'text-[#16a34a] font-medium' : 'text-[#888888]'}`}>
               {cloudConnected ? 'Cloud Online' : 'Cloud Offline'}
             </span>
           </div>

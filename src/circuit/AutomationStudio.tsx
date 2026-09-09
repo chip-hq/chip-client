@@ -71,9 +71,15 @@ export const AutomationStudio: React.FC<AutomationStudioProps> = ({
         setProjects(res.projects)
         if (res.projects.length === 0) {
           setCurrentPid('')
+          setOpenedProjectId('')
           circuitStore.clearProject()
-        } else if (!currentPid || !res.projects.some((p) => p.projectId === currentPid)) {
-          setCurrentPid(res.projects[0].projectId)
+        } else {
+          const projectExists = currentPid && res.projects.some((p) => p.projectId === currentPid)
+          if (!projectExists) {
+            setCurrentPid(res.projects[0].projectId)
+            setOpenedProjectId('')
+            window.history.replaceState({}, '', '#/automation')
+          }
         }
       }
     } catch {
@@ -182,31 +188,31 @@ export const AutomationStudio: React.FC<AutomationStudioProps> = ({
 
           <div className="w-px h-4 bg-slate-200" />
 
-          {/* Project Switcher */}
-          <div className="automation-studio-actions flex items-center gap-2">
-            <span className="text-[11px] font-medium text-slate-400">Project</span>
-            <CleanDropdown
-              value={currentPid}
-              options={projectOptions}
-              onChange={openProject}
-              disabled={projects.length === 0}
-              placeholder="No projects"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setCreateError(null)
-                setShowCreateProject(true)
-              }}
-              className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-200"
-            >
-              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              Create Project
-            </button>
-
-          </div>
+          {!openedProjectId && (
+            <div className="automation-studio-actions flex items-center gap-2">
+              <span className="text-[11px] font-medium text-slate-400">Project</span>
+              <CleanDropdown
+                value={currentPid}
+                options={projectOptions}
+                onChange={openProject}
+                disabled={projects.length === 0}
+                placeholder="No projects"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateError(null)
+                  setShowCreateProject(true)
+                }}
+                className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-200"
+              >
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                Create Project
+              </button>
+            </div>
+          )}
         </div>
 
       </div>
