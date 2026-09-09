@@ -33,7 +33,7 @@ export function BottomConsole({
   recentSerialLine,
   oledPreviewEnabled = false,
 }: BottomConsoleProps) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [btOpen, setBtOpen] = useState(false)
   const [height, setHeight] = useState(() => {
     const saved = Number(localStorage.getItem('chip_console_height_v2'))
