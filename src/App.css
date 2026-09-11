@@ -1305,11 +1305,8 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  transition: opacity 0.18s ease;
+  transition: none;
 }
-
-.pipeline-status.is-hidden { opacity: 0; }
-.pipeline-status.is-visible { opacity: 1; }
 
 .pipeline-status-ring {
   display: inline-flex;
@@ -1331,10 +1328,11 @@
 .pipeline-status-spinner {
   position: absolute;
   inset: 0;
-  border: 2px solid #e5e7eb;
-  border-top-color: #64748b;
+  border: 2px solid #d8dee8;
+  border-top-color: #2563eb;
   border-radius: 50%;
   animation: pipeline-spin 0.85s linear infinite;
+  z-index: 0;
 }
 
 .pipeline-status-ring-inner {
@@ -1346,6 +1344,8 @@
   height: 100%;
   border-radius: 50%;
   position: relative;
+  z-index: 1;
+  color: #64748b;
 }
 
 .pipeline-status-label {
@@ -1356,62 +1356,30 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
+  transition: opacity 0.18s ease;
 }
 
-.flash-pipeline-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  white-space: nowrap;
-}
+.pipeline-status-label.is-hidden { opacity: 0; }
+.pipeline-status-label.is-visible { opacity: 1; }
 
-.flash-pipeline-stage {
+.pipeline-status-icon {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 24px;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 500;
+  width: 12px;
+  height: 12px;
+  transition: opacity 0.18s ease;
 }
 
-.flash-pipeline-stage.is-active {
-  border-color: #000000;
-  background: #000000;
-  color: #ffffff;
-}
-
-.flash-pipeline-stage.is-done {
-  border-color: #86efac;
-  color: #16a34a;
-}
-
-.flash-pipeline-loader {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.45);
-  border-top-color: #ffffff;
-  border-radius: 50%;
-  animation: pipeline-spin 0.85s linear infinite;
-}
-
-.flash-pipeline-check {
-  font-size: 10px;
-}
+.pipeline-status-icon.is-hidden { opacity: 0; }
+.pipeline-status-icon.is-visible { opacity: 1; }
 
 @keyframes pipeline-spin {
   to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pipeline-status,
   .pipeline-status-spinner,
-  .flash-pipeline-loader {
+  .pipeline-status-label,
+  .pipeline-status-icon {
     animation: none;
     transition: none;
   }

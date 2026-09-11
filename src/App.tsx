@@ -1781,53 +1781,44 @@ function PipelineStatusForJob({ job }: { job: ActiveJob }) {
   return <FlashPipelineStatus progress={job.progress} />
 }
 
-const FLASH_PIPELINE_STAGES = ['Connecting', 'Erasing', 'Writing', 'Verifying', 'Done'] as const
-
 function FlashPipelineStatus({ progress }: { progress: number }) {
-  const currentIndex = progress >= 100 ? 4 : progress >= 90 ? 3 : progress >= 15 ? 2 : progress > 0 ? 1 : 0
-  const active = FLASH_PIPELINE_STAGES[currentIndex]
-
-  return (
-    <div className="flash-pipeline-status" aria-live="polite">
-      {FLASH_PIPELINE_STAGES.map((stage, index) => (
-        <span key={stage} className={`flash-pipeline-stage ${stage === active ? 'is-active' : index < currentIndex ? 'is-done' : ''}`}>
-          {stage === active && progress < 100 && <span className="flash-pipeline-loader" aria-hidden="true" />}
-          {stage === 'Done' && progress >= 100 && <span className="flash-pipeline-check" aria-hidden="true">✓</span>}
-          {stage}
-        </span>
-      ))}
-    </div>
-  )
+  const stage = progress >= 90 ? 'verifying' : progress >= 15 ? 'writing' : progress > 0 ? 'erasing' : 'connecting'
+  return <PipelineStatus status={stage} progress={progress} />
 }
 
-type PipelineStatusValue = 'idle' | 'connecting' | 'compiling' | 'flashing' | 'verifying' | 'done' | 'error'
+type PipelineStatusValue = 'idle' | 'connecting' | 'erasing' | 'writing' | 'compiling' | 'flashing' | 'verifying' | 'done' | 'error'
 
 interface PipelineStatusProps {
   status: PipelineStatusValue
   progress?: number
   errorMessage?: string
+  labelOverride?: string
 }
 
-const PIPELINE_STATUS_CONTENT: Record<PipelineStatusValue, { label: string; icon: 'plug' | 'code' | 'bolt' | 'check' | 'alert' }> = {
+const PIPELINE_STATUS_CONTENT: Record<PipelineStatusValue, { label: string; icon: 'plug' | 'eraser' | 'code' | 'bolt' | 'check' | 'check-circle' | 'alert' }> = {
   idle: { label: 'Waiting for an agent to trigger a compile or flash…', icon: 'plug' },
   connecting: { label: 'Connecting to board…', icon: 'plug' },
+  erasing: { label: 'Erasing flash…', icon: 'eraser' },
+  writing: { label: 'Writing binary…', icon: 'code' },
   compiling: { label: 'Compiling firmware…', icon: 'code' },
   flashing: { label: 'Flashing binary…', icon: 'bolt' },
   verifying: { label: 'Verifying…', icon: 'check' },
-  done: { label: 'Flash complete', icon: 'check' },
+  done: { label: 'Flash complete', icon: 'check-circle' },
   error: { label: 'Something went wrong', icon: 'alert' },
 }
 
 function PipelineIcon({ type }: { type: PipelineStatusProps['status'] }) {
   const icon = PIPELINE_STATUS_CONTENT[type].icon
   if (icon === 'plug') return <path d="M9 3v6m6-6v6M7 9h10v2a5 5 0 0 1-10 0V9Zm5 7v5m-3 0h6" />
+  if (icon === 'eraser') return <path d="m7 15 8-8 4 4-8 8H6l-2-2 3-3Zm5 4h8" />
   if (icon === 'code') return <path d="m9 7-5 5 5 5M15 7l5 5-5 5M13 4l-2 16" />
   if (icon === 'bolt') return <path d="m13 2-9 12h7l-1 8 9-12h-7l1-8Z" />
   if (icon === 'check') return <path d="m5 12 4 4L19 6" />
+  if (icon === 'check-circle') return <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></>
   return <path d="M12 8v4m0 4h.01M10.3 3.8 2.9 17a2 2 0 0 0 1.75 3h14.7a2 2 0 0 0 1.75-3l-7.4-13.2a2 2 0 0 0-3.4 0Z" />
 }
 
-function PipelineStatus({ status, progress, errorMessage }: PipelineStatusProps) {
+function PipelineStatus({ status, progress, errorMessage, labelOverride }: PipelineStatusProps) {
   const [visibleStatus, setVisibleStatus] = useState(status)
   const [visible, setVisible] = useState(true)
 
@@ -1842,10 +1833,10 @@ function PipelineStatus({ status, progress, errorMessage }: PipelineStatusProps)
   }, [status, visibleStatus])
 
   const content = PIPELINE_STATUS_CONTENT[visibleStatus]
-  const hasProgress = typeof progress === 'number' && Number.isFinite(progress)
-  const isIndeterminate = !hasProgress && !['idle', 'done', 'error'].includes(visibleStatus)
+  const hasProgress = typeof progress === 'number' && Number.isFinite(progress) && progress > 0
+  const isIndeterminate = !['idle', 'done', 'error'].includes(visibleStatus) && !hasProgress
   const clampedProgress = Math.min(100, Math.max(0, progress ?? 0))
-  const label = visibleStatus === 'error' && errorMessage ? errorMessage : content.label
+  const label = visibleStatus === 'error' && errorMessage ? errorMessage : labelOverride || content.label
 
   return (
     <div className={`pipeline-status ${visible ? 'is-visible' : 'is-hidden'}`} aria-live="polite">
@@ -1855,12 +1846,14 @@ function PipelineStatus({ status, progress, errorMessage }: PipelineStatusProps)
       >
         {isIndeterminate && <span className="pipeline-status-spinner" aria-hidden="true" />}
         <span className="pipeline-status-ring-inner">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <PipelineIcon type={visibleStatus} />
-          </svg>
+          <span className={`pipeline-status-icon ${visible ? 'is-visible' : 'is-hidden'}`}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <PipelineIcon type={visibleStatus} />
+            </svg>
+          </span>
         </span>
       </span>
-      <span className="pipeline-status-label">{label}</span>
+      <span className={`pipeline-status-label ${visible ? 'is-visible' : 'is-hidden'}`}>{label}</span>
     </div>
   )
 }
