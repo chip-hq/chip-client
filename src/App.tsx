@@ -16,10 +16,6 @@ import { BottomConsole } from './components/BottomConsole'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
-import { setDashboardActionProvider, setDashboardSnapshotProvider } from './webmcp/tools'
-import { buildAgentPrompt, getWebMCPUrl } from './webmcp/room'
-import { AgentSidebar } from './components/AgentSidebar'
-import { AutomationStudio } from './circuit'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -77,6 +73,13 @@ function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
   return `${(b / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function tabFromHash(): TabType {
+  const path = window.location.hash.replace(/^#\/?/, '').split('/')[0]
+  return ['dashboard', 'manual', 'history', 'setup'].includes(path)
+    ? path as TabType
+    : 'dashboard'
 }
 
 function parseOffset(raw: string): number {
@@ -436,27 +439,12 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [progress, setProgress] = useState(0)
   const [log, setLog] = useState<string[]>([])
   const [cloudConnected, setCloudConnected] = useState(false)
-  const [agentConnected, setAgentConnected] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     return localStorage.getItem('chip_sidebar_open') !== 'false'
   })
-  const [currentTab, setCurrentTab] = useState<TabType>('dashboard')
-  const [setupSubTab, setSetupSubTab] = useState<'webmcp' | 'mcp'>('webmcp')
+  const [currentTab, setCurrentTab] = useState<TabType>(tabFromHash)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [agentSidebarOpen, setAgentSidebarOpen] = useState(false)
-
-  // Auto-open agent sidebar whenever an agent posts a message or requested by user action
-  useEffect(() => {
-    const handleMsg = () => setAgentSidebarOpen(true)
-    const handleOpen = () => setAgentSidebarOpen(true)
-    window.addEventListener('chip:agent-message', handleMsg)
-    window.addEventListener('chip:open-agent', handleOpen)
-    return () => {
-      window.removeEventListener('chip:agent-message', handleMsg)
-      window.removeEventListener('chip:open-agent', handleOpen)
-    }
-  }, [])
   const [activeConsoleTab, setActiveConsoleTab] = useState<'log' | 'preview'>('log')
   const [activeCompanionHtml, setActiveCompanionHtml] = useState<string | null>(null)
   const [activeCompanionTitle, setActiveCompanionTitle] = useState<string | null>(null)
@@ -473,6 +461,11 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     return localStorage.getItem('chip_oled_preview_enabled') === 'true'
   })
   const [recentSerialLine, setRecentSerialLine] = useState<string | null>(null)
+
+  const handleSelectTab = useCallback((tab: TabType) => {
+    setCurrentTab(tab)
+    window.history.pushState({}, '', `#/${tab}`)
+  }, [])
 
   const handleToggleCompanion = useCallback((enabled: boolean) => {
     setCompanionEnabled(enabled)
@@ -503,14 +496,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       try {
         const res = await fetch(`${BACKEND_URL}/api/agents/status?userId=${uid}`)
         if (res.ok) {
-          const data = await res.json()
-          const isConn = !!data.connected
-          setAgentConnected(isConn)
-          if (isConn) {
-            localStorage.setItem('chip_agent_connected', 'true')
-          } else {
-            localStorage.removeItem('chip_agent_connected')
-          }
         }
       } catch {
         // non-fatal
@@ -544,14 +529,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       try {
         const agentRes = await fetch(`${BACKEND_URL}/api/agents/status?userId=${uid}`, { signal: AbortSignal.timeout(4000) })
         if (agentRes.ok) {
-          const data = await agentRes.json()
-          const isConn = !!data.connected
-          setAgentConnected(isConn)
-          if (isConn) {
-            localStorage.setItem('chip_agent_connected', 'true')
-          } else {
-            localStorage.removeItem('chip_agent_connected')
-          }
         }
       } catch {
         // non-fatal
@@ -586,7 +563,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
   // Active job tracking for compile & flash phases
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null)
-  const [agentNote, setAgentNote] = useState<string | null>(null)
 
   const transportRef = useRef<Transport | null>(null)
   const loaderRef = useRef<ESPLoader | null>(null)
@@ -598,39 +574,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const busy = status === 'connecting' || status === 'flashing'
   const connected = status === 'connected' || status === 'flashing' || status === 'done'
 
-  // Feed live board & dashboard snapshot state to the WebMCP tools
-  useEffect(() => {
-    setDashboardSnapshotProvider(() => ({
-      devices: connected
-        ? [{ deviceId: 'default_device', chip, connected, status, baud, transport: 'web-serial' as const }]
-        : [],
-      serialLogs: log,
-      activeJob: activeJob
-        ? {
-            jobId: activeJob.jobId,
-            phase: activeJob.phase,
-            status: activeJob.status,
-            progress: activeJob.progress,
-            log: activeJob.log,
-          }
-        : null,
-      cloudConnected,
-      agentConnected,
-      userEmail: email || null,
-      companionEnabled,
-      agentNote,
-    }))
-  }, [chip, status, connected, baud, log, activeJob, cloudConnected, agentConnected, email, companionEnabled, agentNote])
-
-  useEffect(() => {
-    const handleAgentNote = (event: Event) => {
-      const note = (event as CustomEvent<{ note: string }>).detail?.note
-      if (note) setAgentNote(note)
-    }
-
-    window.addEventListener('chip:agent-note', handleAgentNote)
-    return () => window.removeEventListener('chip:agent-note', handleAgentNote)
-  }, [])
 
   const uiBufferRef = useRef<string[]>([])
   const isCapturingUiRef = useRef<boolean>(false)
@@ -753,6 +696,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       })
 
       const detected = await loader.main()
+      // Keep the active loader available to serial operations.
+      // eslint-disable-next-line react-hooks/immutability
       loaderRef.current = loader
       setChip(detected)
       pushLine(`[${label}] Bootloader ready: ${detected}`)
@@ -1245,12 +1190,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     }
   }, [prepareBootloaderSession, pushLine, showAlert, stopSerialDrain])
 
-  useEffect(() => {
-    setDashboardActionProvider({
-      eraseBoard: () => eraseChip({ throwOnError: true }),
-    })
-  }, [eraseChip])
-
   const onPickFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
@@ -1290,11 +1229,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
       <Sidebar
         user={user}
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         onSignOut={onSignOut}
         onOpenSettings={() => setSettingsOpen(true)}
         cloudConnected={cloudConnected}
-        agentConnected={agentConnected}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
         desktopOpen={sidebarOpen}
@@ -1343,9 +1281,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               </svg>
             </button>
             <span className="text-xs font-semibold text-black tracking-tight capitalize">
-              {currentTab === 'automation'
-                ? 'Automation Studio'
-                : currentTab === 'history'
+              {currentTab === 'history'
                 ? 'Job History'
                 : currentTab === 'manual'
                 ? 'Manual Flash'
@@ -1378,21 +1314,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               <span>{isRefreshing ? 'Syncing…' : 'Refresh'}</span>
             </button>
 
-            <button
-              onClick={() => setAgentSidebarOpen((prev) => !prev)}
-              className={`h-7 px-2.5 border rounded text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                agentSidebarOpen
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white hover:bg-[#ebebeb] border-[#e5e5e5] text-[#444444] hover:text-black'
-              }`}
-              title="Toggle Agent sidebar"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              <span>Agent</span>
-            </button>
-
             <span className={`cloud-status text-[11px] px-2 py-0.5 border border-[#e5e5e5] bg-white font-mono rounded ${cloudConnected ? 'text-[#16a34a] font-medium' : 'text-[#888888]'}`}>
               {cloudConnected ? 'Cloud Online' : 'Cloud Offline'}
             </span>
@@ -1401,15 +1322,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
         {/* Scrollable Body + Agent Sidebar */}
         <div className="flex flex-1 overflow-hidden">
-          {/* TAB: AUTOMATION STUDIO */}
-          <div className={`flex-1 flex flex-col overflow-hidden bg-white ${currentTab === 'automation' ? '' : 'hidden'}`}>
-            <AutomationStudio />
-          </div>
-
-          <main className={`flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5] ${currentTab === 'automation' ? 'hidden' : ''}`}>
+          <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5]">
           <div className="max-w-5xl mx-auto space-y-4 pb-6">
-            {/* TAB: AUTOMATION STUDIO rendered above */}
-
             {/* TAB 1: MAIN AUTOMATED AGENT DASHBOARD */}
             {currentTab === 'dashboard' && (
               <>
@@ -1569,9 +1483,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                 <div className="flex items-center gap-1.5 bg-[#ebebeb] p-1 rounded-xl w-fit text-xs font-medium border border-[#e0e0e0]">
                   <button
                     type="button"
-                    onClick={() => setSetupSubTab('webmcp')}
+                    onClick={() => undefined}
                     className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                      setupSubTab === 'webmcp'
+                      false
                         ? 'bg-white text-black shadow-xs font-semibold'
                         : 'text-[#666666] hover:text-black'
                     }`}
@@ -1585,9 +1499,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSetupSubTab('mcp')}
+                    onClick={() => undefined}
                     className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                      setupSubTab === 'mcp'
+                      true
                         ? 'bg-white text-black shadow-xs font-semibold'
                         : 'text-[#666666] hover:text-black'
                     }`}
@@ -1602,7 +1516,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                 </div>
 
                 {/* SUB-TAB 1: WebMCP Direct Agent Connection */}
-                {setupSubTab === 'webmcp' && (
+                {false && (
                   <div className="space-y-3 max-w-xl animate-in fade-in-50 duration-150 pt-2">
                     {/* Step 1 */}
                     <div className="flex gap-4">
@@ -1620,7 +1534,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                             <button
                               type="button"
                               onClick={() => {
-                                const prompt = buildAgentPrompt()
+                                const prompt = ''
                                 navigator.clipboard.writeText(prompt)
                                 showAlert('success', 'Agent prompt copied! Paste into ChatGPT or Claude.', 'Prompt Copied')
                               }}
@@ -1635,7 +1549,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                             <button
                               type="button"
                               onClick={() => {
-                                const url = getWebMCPUrl()
+                                const url = window.location.href
                                 navigator.clipboard.writeText(url)
                                 showAlert('success', 'Live WebMCP Link copied!', 'Link Copied')
                               }}
@@ -1696,7 +1610,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                 )}
 
                 {/* SUB-TAB 2: Standard MCP Gateway Timeline (Original UI) */}
-                {setupSubTab === 'mcp' && (
+                {true && (
                   <div className="space-y-3 max-w-xl animate-in fade-in-50 duration-150 pt-2">
                     {/* Step 1 */}
                     <div className="flex gap-4">
@@ -1799,15 +1713,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
           </div>
           </main>
 
-          {/* Inline Agent Panel — sits beside the page content */}
-          <AgentSidebar
-            open={agentSidebarOpen}
-            onClose={() => setAgentSidebarOpen(false)}
-          />
         </div>
 
         {/* Bottom-docked Log Console (Dashboard & Manual tabs) */}
-        {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'automation' && (
+        {currentTab !== 'history' && currentTab !== 'setup' && (
           <BottomConsole
             log={log}
             onClearLog={() => setLog([])}

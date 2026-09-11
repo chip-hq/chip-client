@@ -112,17 +112,6 @@
     min-width: 0;
     flex-wrap: wrap;
     gap: 0.35rem;
-  }
-
-  .automation-studio-actions > span {
-    flex: 0 0 auto;
-  }
-
-  .automation-studio-actions > button {
-    max-width: 100%;
-  }
-
-  .automation-studio-actions > div {
     min-width: 0;
   }
 
@@ -599,11 +588,12 @@
   background: transparent !important;
 }
 
-.bottom-console-tab-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #16a34a;
+.bottom-console-tab-icon {
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.bottom-console-tab-icon circle {
   flex-shrink: 0;
 }
 

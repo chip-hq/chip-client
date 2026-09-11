@@ -2,8 +2,6 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
-import { registerWebMCPTools } from './webmcp/tools'
-import { registerAutomationWebMCPTools } from './circuit'
 
 // Suppress noisy third-party browser extension, Vite HMR, and transient connection logs
 if (typeof window !== 'undefined') {
@@ -52,9 +50,5 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-// Register CHIP's WebMCP tools (device + automation) once for the page lifetime.
-// No-op in browsers without WebMCP (enable chrome://flags/#enable-webmcp-testing to test).
-registerWebMCPTools()
-registerAutomationWebMCPTools()
 
 

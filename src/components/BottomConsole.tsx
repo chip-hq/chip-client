@@ -186,7 +186,22 @@ export function BottomConsole({
             onClick={() => selectTab('preview')}
             className={`bottom-console-tab ${activeTab === 'preview' ? 'active' : ''}`}
           >
-            <span className="bottom-console-tab-dot" aria-hidden="true" />
+            <svg
+              className="bottom-console-tab-icon"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6 3v18M18 3v18M6 8h12M6 16h12" />
+              <circle cx="6" cy="8" r="1.5" fill="currentColor" stroke="none" />
+              <circle cx="18" cy="16" r="1.5" fill="currentColor" stroke="none" />
+            </svg>
             <span className="bottom-console-tab-full">Live AI Companion</span>
             <span className="bottom-console-tab-short">Companion</span>
             {companionHtml && <span className="bottom-console-live">Live</span>}

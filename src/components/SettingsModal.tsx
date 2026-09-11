@@ -136,7 +136,7 @@ export function SettingsModal({
 
   if (!isOpen) return null
 
-  const webmcpAvailable = typeof document !== 'undefined' && !!document.modelContext
+  const webmcpAvailable = false
 
   const handleToggle = async (enabled: boolean) => {
     onToggleCompanion(enabled)

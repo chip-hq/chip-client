@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { User } from 'firebase/auth'
 import chipLogo from '../assets/ChipLogo.png'
 
-export type TabType = 'dashboard' | 'automation' | 'manual' | 'history' | 'setup'
+export type TabType = 'dashboard' | 'manual' | 'history' | 'setup'
 
 interface SidebarProps {
   user: User
@@ -11,7 +11,6 @@ interface SidebarProps {
   onSignOut: () => void
   onOpenSettings?: () => void
   cloudConnected: boolean
-  agentConnected?: boolean
   isMobileOpen: boolean
   setIsMobileOpen: (open: boolean) => void
   desktopOpen: boolean
@@ -25,7 +24,6 @@ export function Sidebar({
   onSignOut,
   onOpenSettings,
   cloudConnected,
-  agentConnected = false,
   isMobileOpen,
   setIsMobileOpen,
   desktopOpen,
@@ -110,23 +108,6 @@ export function Sidebar({
             </button>
 
             <button
-              onClick={() => { onSelectTab('automation'); setIsMobileOpen(false) }}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
-                currentTab === 'automation'
-                  ? 'bg-[#ebebeb] text-black font-semibold'
-                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M9 9h6v6H9z" />
-                <path d="M9 1v2m6-2v2M9 21v2m6-2v2M1 9h2m-2 6h2M21 9h2m-2 6h2" />
-              </svg>
-              <span>Automation Studio</span>
-            </button>
-
-
-            <button
               onClick={() => { onSelectTab('history'); setIsMobileOpen(false) }}
               className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
                 currentTab === 'history'
@@ -157,41 +138,6 @@ export function Sidebar({
             </button>
           </nav>
 
-          {/* Connected Agents Section */}
-          <div className="pt-1">
-            <div className="flex items-center justify-between px-2.5 mb-2">
-              <div className="flex items-center gap-1.5">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#888888]">
-                  <path d="M12 2a8 8 0 0 0-8 8c0 3.36 2.07 6.24 5 7.42V20a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2.58c2.93-1.18 5-4.06 5-7.42a8 8 0 0 0-8-8z" />
-                  <path d="M9.5 9h.01" /><path d="M14.5 9h.01" /><path d="M9.5 13a3.5 3.5 0 0 0 5 0" />
-                </svg>
-                <span className="text-[12px] font-medium text-[#666666]">Agents</span>
-              </div>
-            </div>
-
-            <div className="px-2.5 py-2 bg-white border border-[#e5e5e5] rounded text-[12px] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-black">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M12 2v4" /><path d="M12 18v4" />
-                    <path d="m4.93 4.93 2.83 2.83" /><path d="m16.24 16.24 2.83 2.83" />
-                    <path d="M2 12h4" /><path d="M18 12h4" />
-                    <path d="m4.93 19.07 2.83-2.83" /><path d="m16.24 7.76 2.83-2.83" />
-                  </svg>
-                  <span className="font-medium text-black">MCP Server</span>
-                </div>
-                <span className={`text-[10px] font-semibold ${
-                  agentConnected ? 'text-[#16a34a]' : 'text-[#b45309]'
-                }`}>
-                  {agentConnected ? 'Connected' : 'Not connected'}
-                </span>
-              </div>
-              <p className="text-[11px] text-[#888888] leading-tight pl-4">
-                Universal Model Context Protocol.
-              </p>
-            </div>
-          </div>
         </div>
 
         {/* Bottom Section: Status & User Profile */}
