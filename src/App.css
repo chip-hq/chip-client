@@ -1211,8 +1211,8 @@
 
 /* ── Status Panel ─────────────────────────────────────────────────────────── */
 .status-panel {
-  border: 1px solid var(--border);
-  background: #ffffff;
+  border: none;
+  background: transparent;
   border-radius: 6px;
 }
 
@@ -1298,6 +1298,123 @@
   color: var(--text-muted);
   margin: 0;
   align-self: center;
+}
+
+.pipeline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  transition: opacity 0.18s ease;
+}
+
+.pipeline-status.is-hidden { opacity: 0; }
+.pipeline-status.is-visible { opacity: 1; }
+
+.pipeline-status-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 2px;
+  border-radius: 50%;
+  color: #64748b;
+  flex: 0 0 24px;
+}
+
+.pipeline-status-ring.is-indeterminate {
+  position: relative;
+  padding: 0;
+}
+
+.pipeline-status-spinner {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #e5e7eb;
+  border-top-color: #64748b;
+  border-radius: 50%;
+  animation: pipeline-spin 0.85s linear infinite;
+}
+
+.pipeline-status-ring-inner {
+  display: inline-flex;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  position: relative;
+}
+
+.pipeline-status-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.flash-pipeline-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.flash-pipeline-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.flash-pipeline-stage.is-active {
+  border-color: #000000;
+  background: #000000;
+  color: #ffffff;
+}
+
+.flash-pipeline-stage.is-done {
+  border-color: #86efac;
+  color: #16a34a;
+}
+
+.flash-pipeline-loader {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: pipeline-spin 0.85s linear infinite;
+}
+
+.flash-pipeline-check {
+  font-size: 10px;
+}
+
+@keyframes pipeline-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-status,
+  .pipeline-status-spinner,
+  .flash-pipeline-loader {
+    animation: none;
+    transition: none;
+  }
 }
 
 /* ── Compile Job View ─────────────────────────────────────────────────────── */
