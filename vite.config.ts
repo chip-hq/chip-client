@@ -7,6 +7,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    // The OLED component registry is shared with the backend
+    // (`backend/oled-components.js`), one directory above the client root.
+    fs: {
+      allow: ['..'],
+    },
     hmr: {
       overlay: false,
     },

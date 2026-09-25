@@ -16,6 +16,7 @@ import { BottomConsole } from './components/BottomConsole'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
+import { OLEDDesigner } from './components/OLEDDesigner'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -77,7 +78,7 @@ function formatBytes(b: number): string {
 
 function tabFromHash(): TabType {
   const path = window.location.hash.replace(/^#\/?/, '').split('/')[0]
-  return ['dashboard', 'manual', 'history', 'setup'].includes(path)
+  return ['dashboard', 'oled', 'manual', 'history', 'setup'].includes(path)
     ? path as TabType
     : 'dashboard'
 }
@@ -1275,6 +1276,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             <span className="text-xs font-semibold text-black tracking-tight capitalize">
               {currentTab === 'history'
                 ? 'Job History'
+                : currentTab === 'oled'
+                ? 'OLED Designer'
                 : currentTab === 'manual'
                 ? 'Manual Flash'
                 : currentTab === 'setup'
@@ -1314,8 +1317,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
         {/* Scrollable Body + Agent Sidebar */}
         <div className="flex flex-1 overflow-hidden">
-          <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5]">
-          <div className="max-w-5xl mx-auto space-y-4 pb-6">
+          <main className={`flex-1 ${currentTab === 'oled' ? 'overflow-hidden' : 'overflow-y-auto'} p-4 md:p-8 bg-[#f5f5f5]`}>
+          <div className={`mx-auto ${currentTab === 'oled' ? 'h-full max-w-none' : 'max-w-5xl space-y-4 pb-6'}`}>
+            {currentTab === 'oled' && <div className="-mx-4 -mt-4 h-[calc(100vh-3rem)] md:-mx-8 md:-mt-8 overflow-hidden"><OLEDDesigner /></div>}
             {/* TAB 1: MAIN AUTOMATED AGENT DASHBOARD */}
             {currentTab === 'dashboard' && (
               <>
@@ -1709,7 +1713,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         </div>
 
         {/* Bottom-docked Log Console (Dashboard & Manual tabs) */}
-        {currentTab !== 'history' && currentTab !== 'setup' && (
+        {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'oled' && (
           <BottomConsole
             log={log}
             onClearLog={() => setLog([])}

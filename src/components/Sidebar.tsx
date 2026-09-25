@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { User } from 'firebase/auth'
 import chipLogo from '../assets/ChipLogo.png'
 
-export type TabType = 'dashboard' | 'manual' | 'history' | 'setup'
+export type TabType = 'dashboard' | 'oled' | 'manual' | 'history' | 'setup'
 
 interface SidebarProps {
   user: User
@@ -120,6 +120,21 @@ export function Sidebar({
                 <polyline points="12 6 12 12 16 14" />
               </svg>
               <span>Job History</span>
+            </button>
+
+            <button
+              onClick={() => { onSelectTab('oled'); setIsMobileOpen(false) }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
+                currentTab === 'oled'
+                  ? 'bg-[#ebebeb] text-black font-semibold'
+                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M7 8h.01M11 8h.01M15 8h.01M7 12h.01M11 12h.01M15 12h.01M7 16h10" />
+              </svg>
+              <span>OLED Designer</span>
             </button>
 
             <button
