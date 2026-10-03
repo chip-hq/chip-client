@@ -11,9 +11,10 @@ interface SettingsModalProps {
   onToggleOledPreview: (enabled: boolean) => void
   backendUrl: string
   authToken?: string | null
+  userId?: string
 }
 
-type SettingsTab = 'companion' | 'flashing' | 'webmcp'
+type SettingsTab = 'companion' | 'flashing' | 'wifi' | 'webmcp'
 
 const WEBMCP_COMMANDS = [
   {
@@ -63,7 +64,7 @@ const WEBMCP_COMMANDS = [
   },
 ] as const
 
-// Small copy-to-clipboard button — shows a green check for ~1.5s after copying.
+// Small copy-to-clipboard button - shows a green check for ~1.5s after copying.
 function CopyButton({ value, className = '' }: { value: string; className?: string }) {
   const [copied, setCopied] = useState(false)
   const timeoutRef = useRef<number | null>(null)
@@ -131,12 +132,48 @@ export function SettingsModal({
   onToggleOledPreview,
   backendUrl,
   authToken,
+  userId,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('companion')
-
-  if (!isOpen) return null
-
+  const [wifiMode, setWifiMode] = useState<'disabled' | 'hardcoded' | 'generated' | 'portal'>('disabled')
+  const [wifiSsid, setWifiSsid] = useState('')
+  const [wifiPassword, setWifiPassword] = useState('')
+  const [wifiSaving, setWifiSaving] = useState(false)
+  const [wifiSaved, setWifiSaved] = useState(false)
   const webmcpAvailable = false
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'wifi') return
+    let cancelled = false
+    fetch(`${backendUrl}/api/wifi-config?userId=${encodeURIComponent(userId || '')}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (cancelled || !data) return
+        setWifiMode(data.mode || 'disabled')
+        setWifiSsid(data.ssid || '')
+      })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [activeTab, backendUrl, isOpen, userId])
+
+  const saveWifiConfig = async () => {
+    setWifiSaving(true)
+    setWifiSaved(false)
+    try {
+      const res = await fetch(`${backendUrl}/api/wifi-config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, mode: wifiMode, ssid: wifiSsid, password: wifiPassword }),
+      })
+      if (!res.ok) throw new Error('Could not save WiFi configuration')
+      setWifiSaved(true)
+      setWifiPassword('')
+    } catch {
+      setWifiSaved(false)
+    } finally {
+      setWifiSaving(false)
+    }
+  }
 
   const handleToggle = async (enabled: boolean) => {
     onToggleCompanion(enabled)
@@ -150,7 +187,7 @@ export function SettingsModal({
         body: JSON.stringify({ webCompanion: enabled }),
       })
     } catch {
-      // non-fatal — localStorage still holds the value
+      // non-fatal - localStorage still holds the value
     }
   }
 
@@ -158,6 +195,8 @@ export function SettingsModal({
     `w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer text-left ${
       activeTab === tab ? 'bg-[#ebebeb] text-black' : 'text-[#666666] hover:bg-[#f0f0f0]'
     }`
+
+  if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -259,6 +298,42 @@ export function SettingsModal({
                   </button>
                 </div>
               </>
+            ) : activeTab === 'wifi' ? (
+              <>
+                <div className="text-xs font-semibold text-black tracking-tight mb-1">WiFi build configuration</div>
+                <p className="text-[11px] text-[#888888] leading-relaxed mb-4">
+                  Chip applies this setting only during compilation. Claude receives the mode, never the password.
+                </p>
+                <label className="block text-[11px] font-medium text-black mb-1">WiFi mode</label>
+                <select
+                  value={wifiMode}
+                  onChange={(e) => setWifiMode(e.target.value as typeof wifiMode)}
+                  className="w-full h-8 px-2 border border-[#d1d5db] rounded text-xs bg-white text-black"
+                >
+                  <option value="disabled">Disabled</option>
+                  <option value="hardcoded">Hardcoded</option>
+                  <option value="generated">Generated at compile time</option>
+                  <option value="portal">Setup portal flag</option>
+                </select>
+                {wifiMode !== 'disabled' && (
+                  <div className="space-y-3 mt-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-black mb-1">Network name (SSID)</label>
+                      <input value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} className="w-full h-8 px-2 border border-[#d1d5db] rounded text-xs" autoComplete="off" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-black mb-1">Password</label>
+                      <input type="password" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} className="w-full h-8 px-2 border border-[#d1d5db] rounded text-xs" autoComplete="new-password" placeholder="Enter to replace saved password" />
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-4">
+                  <button type="button" onClick={() => void saveWifiConfig()} disabled={wifiSaving || ((wifiMode === 'generated' || wifiMode === 'hardcoded') && (!wifiSsid || !wifiPassword))} className="h-8 px-3 bg-black text-white rounded text-xs disabled:opacity-40">
+                    {wifiSaving ? 'Saving...' : 'Save WiFi mode'}
+                  </button>
+                  {wifiSaved && <span className="text-[11px] text-[#16a34a]">Ready for the next compile</span>}
+                </div>
+              </>
             ) : (
               <>
                 <div className="flex items-center justify-between mb-3">
@@ -274,7 +349,7 @@ export function SettingsModal({
                 <div className="space-y-3 text-[11px] text-[#666666] leading-relaxed">
                   <p>
                     CHIP exposes your connected board to AI agents running in your browser through{' '}
-                    <span className="font-medium text-black">WebMCP</span> — an emerging web standard.
+                    <span className="font-medium text-black">WebMCP</span> - an emerging web standard.
                     No API keys or extra setup required.
                   </p>
 
@@ -287,7 +362,7 @@ export function SettingsModal({
                       <CopyButton value="list_devices" className="ml-auto" />
                     </div>
                     <div className="text-[11px] text-[#888888] mt-1">
-                      Reports the ESP32 connected over USB — chip type, connection status, and baud rate.
+                      Reports the ESP32 connected over USB - chip type, connection status, and baud rate.
                     </div>
                   </div>
 
@@ -326,7 +401,7 @@ export function SettingsModal({
                       <li>Open CHIP in a WebMCP-capable browser or agent.</li>
                       <li>Connect your ESP32 over USB.</li>
                       <li>
-                        Ask the agent about your board — it can call{' '}
+                        Ask the agent about your board - it can call{' '}
                         <code className="font-mono text-[#666666]">list_devices</code> to read live state.
                       </li>
                     </ol>
@@ -369,6 +444,13 @@ export function SettingsModal({
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               </svg>
               <span>Flashing & Reset</span>
+            </button>
+
+            <button className={navItemClass('wifi')} onClick={() => setActiveTab('wifi')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0" /><path d="M8.5 16.08a6 6 0 0 1 7 0" /><path d="M12 19.5h.01" />
+              </svg>
+              <span>WiFi Build</span>
             </button>
 
             <button className={navItemClass('webmcp')} onClick={() => setActiveTab('webmcp')}>

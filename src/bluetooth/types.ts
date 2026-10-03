@@ -24,7 +24,7 @@ export interface BtTerminalEntry {
 export interface BluetoothTransport {
   readonly kind: BtTransportKind
   readonly label: string
-  /** Connect without throwing for expected failures — always leaves a usable state. */
+  /** Connect without throwing for expected failures - always leaves a usable state. */
   connect(): Promise<BtConnectResult>
   disconnect(): Promise<void>
   send(message: string): Promise<void>

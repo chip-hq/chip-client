@@ -1,10 +1,10 @@
 // Firebase initialization + Google auth helpers.
 // A Firebase *web* config is a public client identifier (not a secret), so these
-// values live inline — the same way Google's own docs ship them.
+// values live inline - the same way Google's own docs ship them.
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth'
 
-// chip-hq project — "Continue with Google" is the only enabled sign-in provider.
+// chip-hq project - "Continue with Google" is the only enabled sign-in provider.
 const firebaseConfig = {
   apiKey: 'AIzaSyCqGDdLjDTgdTgprcK19daAFPSth6N4jdM',
   authDomain: 'chip-hq.firebaseapp.com',

@@ -1,5 +1,5 @@
 /**
- * Friendly Bluetooth bridge errors — never surface raw browser exceptions in the UI.
+ * Friendly Bluetooth bridge errors - never surface raw browser exceptions in the UI.
  */
 
 export type BtFailureCode =

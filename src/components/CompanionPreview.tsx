@@ -24,7 +24,7 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine, fill
   // Forward every new serial line from the board into the companion iframe via postMessage
   useEffect(() => {
     if (!recentSerialLine || !iframeRef.current?.contentWindow) return
-    // Skip Chip system/flash messages — only forward lines that look like board data
+    // Skip Chip system/flash messages - only forward lines that look like board data
     const skip = recentSerialLine.startsWith('[FLASH') ||
                  recentSerialLine.startsWith('[ERROR') ||
                  recentSerialLine.startsWith('[CHIP') ||
@@ -50,7 +50,7 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine, fill
     setLiveDataCount((n) => n + 1)
   }, [recentSerialLine])
 
-  // No companion compiled yet — clean idle state
+  // No companion compiled yet - clean idle state
   if (!htmlContent) {
     return (
       <div className={`flex flex-col bg-[#141414] font-mono select-none ${fill ? 'border-0' : 'border border-[#2a2a2a] rounded'} ${shellClass}`}>
@@ -67,7 +67,7 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine, fill
           <div className="text-[11px] text-[#404040] leading-relaxed max-w-xs">
             Connect your board, then ask Claude to compile and flash a sketch.
             Claude will generate an interactive companion that receives live data
-            from your board over USB — no WiFi needed.
+            from your board over USB - no WiFi needed.
           </div>
         </div>
 
@@ -79,7 +79,7 @@ export function CompanionPreview({ htmlContent, jobTitle, recentSerialLine, fill
     )
   }
 
-  // Companion HTML available — render it and pipe live serial board data in
+  // Companion HTML available - render it and pipe live serial board data in
   return (
     <div className={`flex flex-col bg-[#141414] overflow-hidden ${fill ? 'border-0' : 'border border-[#2a2a2a] rounded'} ${shellClass}`}>
       {/* Top Bar */}

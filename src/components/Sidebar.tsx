@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { User } from 'firebase/auth'
 import chipLogo from '../assets/ChipLogo.png'
 
-export type TabType = 'dashboard' | 'oled' | 'manual' | 'history' | 'setup'
+export type TabType = 'dashboard' | 'code' | 'assets' | 'manual' | 'history' | 'setup'
 
 interface SidebarProps {
   user: User
@@ -108,6 +108,37 @@ export function Sidebar({
             </button>
 
             <button
+              onClick={() => { onSelectTab('code'); setIsMobileOpen(false) }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
+                currentTab === 'code'
+                  ? 'bg-[#ebebeb] text-black font-semibold'
+                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              <span>Code</span>
+            </button>
+
+            <button
+              onClick={() => { onSelectTab('assets'); setIsMobileOpen(false) }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
+                currentTab === 'assets'
+                  ? 'bg-[#ebebeb] text-black font-semibold'
+                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="m21 15-5-5L5 21" />
+              </svg>
+              <span>Assets</span>
+            </button>
+
+            <button
               onClick={() => { onSelectTab('history'); setIsMobileOpen(false) }}
               className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
                 currentTab === 'history'
@@ -120,21 +151,6 @@ export function Sidebar({
                 <polyline points="12 6 12 12 16 14" />
               </svg>
               <span>Job History</span>
-            </button>
-
-            <button
-              onClick={() => { onSelectTab('oled'); setIsMobileOpen(false) }}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors cursor-pointer text-left ${
-                currentTab === 'oled'
-                  ? 'bg-[#ebebeb] text-black font-semibold'
-                  : 'text-[#555555] hover:bg-[#ebebeb]/60 hover:text-black'
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-                <path d="M7 8h.01M11 8h.01M15 8h.01M7 12h.01M11 12h.01M15 12h.01M7 16h10" />
-              </svg>
-              <span>OLED Designer</span>
             </button>
 
             <button
@@ -172,7 +188,7 @@ export function Sidebar({
 
           {/* User Profile Card with animated dropdown */}
           <div className="relative mx-1" ref={profileRef}>
-            {/* Animated dropdown — grows from the bottom of the card upward */}
+            {/* Animated dropdown - grows from the bottom of the card upward */}
             <div
               className="overflow-hidden transition-all duration-200 ease-in-out"
               style={{ maxHeight: profileOpen ? '120px' : '0px', opacity: profileOpen ? 1 : 0 }}
@@ -228,7 +244,7 @@ export function Sidebar({
               </div>
             </div>
 
-            {/* Profile row — clicking toggles the dropdown */}
+            {/* Profile row - clicking toggles the dropdown */}
             <button
               onClick={() => setProfileOpen((o) => !o)}
               className={`w-full flex items-center gap-2 p-2 bg-white border border-[#e5e5e5] text-left transition-colors cursor-pointer ${

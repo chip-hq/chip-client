@@ -108,7 +108,7 @@ export function BluetoothPanel({ oledPreviewEnabled = false }: BluetoothPanelPro
           message: 'Bluetooth link dropped. You can Connect again when ready.',
           recoverable: true,
         })
-        push('info', 'Bluetooth link dropped — back to disconnected.')
+        push('info', 'Bluetooth link dropped - back to disconnected.')
       }
       if (next === 'connected') {
         wasConnectedRef.current = true
@@ -138,7 +138,7 @@ export function BluetoothPanel({ oledPreviewEnabled = false }: BluetoothPanelPro
   }, [transport, push, resetIdleUi])
 
   useEffect(() => {
-    // Keep the panel pinned to the connection card on open — only scroll the terminal box.
+    // Keep the panel pinned to the connection card on open - only scroll the terminal box.
     const box = termScrollRef.current
     if (box) box.scrollTop = box.scrollHeight
   }, [entries])
@@ -225,7 +225,7 @@ export function BluetoothPanel({ oledPreviewEnabled = false }: BluetoothPanelPro
       ackTimerRef.current = setTimeout(() => {
         ackTimerRef.current = null
         setOledPhase((phase) => {
-          // TX already reached the board if the physical OLED updated — missing ACK is common on SPP and not a failure.
+          // TX already reached the board if the physical OLED updated - missing ACK is common on SPP and not a failure.
           if (phase === 'acked') return phase
           return 'sent'
         })

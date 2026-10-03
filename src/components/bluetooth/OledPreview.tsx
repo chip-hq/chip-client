@@ -6,7 +6,7 @@ interface OledPreviewProps {
   status: 'Connected' | 'Waiting' | 'Message received' | 'Disconnected'
 }
 
-/** Simulated 128×64 SH1106 OLED — mirrors display content only, no blink/fade. */
+/** Simulated 128×64 SH1106 OLED - mirrors display content only, no blink/fade. */
 export function OledPreview({ text, status }: OledPreviewProps) {
   const lines = wrapOledText(text, OLED_COLS, OLED_ROWS)
 

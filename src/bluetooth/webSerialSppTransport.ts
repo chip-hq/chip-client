@@ -132,7 +132,7 @@ export class WebSerialSppTransport implements BluetoothTransport {
 
   private async safeClosePort(port: SerialPort): Promise<void> {
     try {
-      // Port already closed — readable/writable are null.
+      // Port already closed - readable/writable are null.
       if (!port.readable && !port.writable) return
       try {
         await port.readable?.cancel()
@@ -146,7 +146,7 @@ export class WebSerialSppTransport implements BluetoothTransport {
       }
       await port.close()
     } catch {
-      /* ignore — may already be closed or held elsewhere */
+      /* ignore - may already be closed or held elsewhere */
     }
   }
 

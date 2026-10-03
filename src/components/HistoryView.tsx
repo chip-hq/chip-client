@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { CompanionPreview } from './CompanionPreview'
 
 export interface JobItem {
@@ -6,6 +6,8 @@ export interface JobItem {
   userId?: string
   phase?: 'compile' | 'flash'
   board?: string
+  platform?: string | null
+  artifact?: string | null
   status: 'pending' | 'compiling' | 'started' | 'flashing' | 'done' | 'error'
   progress?: number
   error?: string
@@ -22,48 +24,44 @@ export interface JobItem {
 
 interface HistoryViewProps {
   backendUrl: string
-  connected: boolean
+  userId: string
   refreshKey?: number
-  onFlashBinary?: (binBase64: string, offset: string, filename: string) => void
+  onOpenInCode?: (jobId: string) => void
+  onFlashFile?: (file: { name: string; board?: string; artifact?: string; offset?: string; data: Uint8Array }) => void
   showAlert: (type: 'error' | 'success' | 'info', message: string, title?: string) => void
 }
 
-type ActiveTab = 'code' | 'binary' | 'log' | 'companion'
-
-export function HistoryView({ backendUrl, connected, refreshKey, onFlashBinary, showAlert }: HistoryViewProps) {
+export function HistoryView({ backendUrl, userId, refreshKey, onOpenInCode, onFlashFile, showAlert }: HistoryViewProps) {
   const [jobs, setJobs] = useState<JobItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
-  const selectedJobIdRef = useRef<string | null>(null)
-  useEffect(() => {
-    selectedJobIdRef.current = selectedJobId
-  }, [selectedJobId])
-
-  const [activeTab, setActiveTab] = useState<ActiveTab>('code')
-  const [copied, setCopied] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  // Detail page: null = full-screen list, otherwise the opened build (full doc).
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<JobItem | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [showLog, setShowLog] = useState(false)
+  const [showCompanion, setShowCompanion] = useState(false)
+  const [flashing, setFlashing] = useState(false)
 
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/jobs`)
-      if (res.ok) {
-        const data = await res.json()
-        // Only show compile jobs — flash jobs are relay-only events with no source code
-        const fetched: JobItem[] = (data.jobs || []).filter(
-          (j: JobItem) => j.phase === 'compile' || j.jobId?.startsWith('compile_')
-        )
-        setJobs(fetched)
-
-        // Lock to current selection if already selected, otherwise set to first
-        if (!selectedJobIdRef.current && fetched.length > 0) {
-          setSelectedJobId(fetched[0].jobId)
-        }
-      }
+      const q = `userId=${encodeURIComponent(userId)}`
+      const res = await fetch(`${backendUrl}/api/jobs?${q}`, { signal: AbortSignal.timeout(10000) })
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      const data = await res.json()
+      // Only show compile jobs - flash jobs are relay-only events with no source code
+      const fetched: JobItem[] = (data.jobs || []).filter(
+        (j: JobItem) => j.phase === 'compile' || j.jobId?.startsWith('compile_')
+      )
+      setJobs(fetched)
+      setLoadError(null)
     } catch (err) {
       console.warn('Failed to fetch jobs history:', err)
+      setLoadError(err instanceof Error ? err.message : 'Could not load builds')
     } finally {
       setLoading(false)
     }
-  }, [backendUrl])
+  }, [backendUrl, userId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load + 5s poll; setState runs after the awaited fetch
@@ -72,61 +70,68 @@ export function HistoryView({ backendUrl, connected, refreshKey, onFlashBinary, 
     return () => clearInterval(interval)
   }, [fetchJobs, refreshKey])
 
-  const selectedJob = jobs.find((j) => j.jobId === selectedJobId) || (jobs.length > 0 ? jobs[0] : null)
-
-  const handleCopyCode = () => {
-    if (!selectedJob?.sourceCode) return
-    navigator.clipboard.writeText(selectedJob.sourceCode)
-    setCopied(true)
-    showAlert('info', 'C++ code copied to clipboard', 'Copied')
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const handleDownloadBin = () => {
-    if (!selectedJob?.binBase64) {
-      showAlert('error', 'No compiled binary available for this job', 'Download Failed')
-      return
-    }
-
+  const openDetail = useCallback(async (jobId: string) => {
+    setDetailId(jobId)
+    setDetail(null)
+    setShowLog(false)
+    setShowCompanion(false)
+    setDetailLoading(true)
     try {
-      const byteCharacters = atob(selectedJob.binBase64)
-      const byteNumbers = new Array(byteCharacters.length)
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      const res = await fetch(`${backendUrl}/api/jobs/${encodeURIComponent(jobId)}?full=1`)
+      if (res.ok) {
+        setDetail(await res.json())
+      } else {
+        showAlert('error', 'Could not load build details', 'Open Failed')
+        setDetailId(null)
       }
-      const byteArray = new Uint8Array(byteNumbers)
-      const blob = new Blob([byteArray], { type: 'application/octet-stream' })
+    } catch {
+      showAlert('error', 'Could not load build details', 'Open Failed')
+      setDetailId(null)
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [backendUrl, showAlert])
+
+  const downloadBin = useCallback(async (job: JobItem) => {
+    try {
+      const res = await fetch(`${backendUrl}/api/jobs/${encodeURIComponent(job.jobId)}/download`)
+      if (!res.ok) throw new Error('No compiled binary available for this job')
+      const buf = new Uint8Array(await res.arrayBuffer())
+      const blob = new Blob([buf as unknown as BlobPart], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = selectedJob.filename || `${selectedJob.jobId}.bin`
+      a.download = job.filename || `${job.jobId}.bin`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      showAlert('success', `Downloaded ${selectedJob.filename || 'firmware.bin'}`, 'Download Started')
+      showAlert('success', `Downloaded ${job.filename || 'firmware.bin'}`, 'Download Started')
     } catch (err) {
-      showAlert('error', `Download error: ${String(err)}`, 'Download Failed')
+      showAlert('error', err instanceof Error ? err.message : String(err), 'Download Failed')
     }
-  }
+  }, [backendUrl, showAlert])
 
-  const handleFlashThisJob = () => {
-    if (!selectedJob?.binBase64) {
-      showAlert('error', 'No compiled binary available to flash', 'Flash Failed')
-      return
+  const flashDetail = useCallback(async () => {
+    if (!detail || flashing) return
+    setFlashing(true)
+    try {
+      const res = await fetch(`${backendUrl}/api/jobs/${encodeURIComponent(detail.jobId)}/download`)
+      if (!res.ok) throw new Error('No compiled binary available for this job')
+      const data = new Uint8Array(await res.arrayBuffer())
+      onFlashFile?.({
+        name: detail.filename || `${detail.jobId}.bin`,
+        board: detail.board,
+        artifact: (detail as JobItem & { artifact?: string }).artifact,
+        offset: detail.offset,
+        data,
+      })
+    } catch (err) {
+      showAlert('error', err instanceof Error ? err.message : String(err), 'Flash Failed')
+    } finally {
+      setFlashing(false)
     }
-    if (!connected) {
-      showAlert('error', 'Please connect your ESP32 board in the Dashboard tab first', 'Board Not Connected')
-      return
-    }
-    if (onFlashBinary) {
-      onFlashBinary(
-        selectedJob.binBase64,
-        selectedJob.offset || '0x0',
-        selectedJob.filename || `${selectedJob.jobId}.bin`
-      )
-    }
-  }
+  }, [backendUrl, detail, flashing, onFlashFile, showAlert])
 
   const [showClearModal, setShowClearModal] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -134,16 +139,15 @@ export function HistoryView({ backendUrl, connected, refreshKey, onFlashBinary, 
   const confirmClearAll = async () => {
     setClearing(true)
     try {
-      let res = await fetch(`${backendUrl}/api/jobs`, { method: 'DELETE' })
+      const q = `userId=${encodeURIComponent(userId)}`
+      let res = await fetch(`${backendUrl}/api/jobs?${q}`, { method: 'DELETE' })
       if (!res.ok && res.status === 404) {
         // Fallback to POST /api/jobs/clear
-        res = await fetch(`${backendUrl}/api/jobs/clear`, { method: 'POST' })
+        res = await fetch(`${backendUrl}/api/jobs/clear?${q}`, { method: 'POST' })
       }
 
       if (res.ok) {
         setJobs([])
-        setSelectedJobId(null)
-        selectedJobIdRef.current = null
         showAlert('success', 'Build history successfully cleared', 'History Cleared')
         setShowClearModal(false)
       } else {
@@ -157,324 +161,302 @@ export function HistoryView({ backendUrl, connected, refreshKey, onFlashBinary, 
     }
   }
 
-  const formatTime = (dateInput?: string | Date) => {
-    if (!dateInput) return '—'
-    const date = new Date(dateInput)
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  // Apps-style row helpers (icon tile, relative updated time)
+  const TILE_COLORS = ['#16a34a', '#3b82f6', '#eab308', '#f97316', '#ef4444', '#8b5cf6']
+  const tileColor = (id: string) => {
+    let h = 0
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+    return TILE_COLORS[h % TILE_COLORS.length]
   }
-
-  const formatDate = (dateInput?: string | Date) => {
-    if (!dateInput) return '—'
-    const date = new Date(dateInput)
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  const timeAgo = (dateInput?: string | Date) => {
+    if (!dateInput) return '-'
+    const s = Math.max(0, Math.round((Date.now() - new Date(dateInput).getTime()) / 1000))
+    if (s < 60) return s <= 5 ? 'just now' : `${s} seconds ago`
+    const m = Math.floor(s / 60)
+    if (m < 60) return m === 1 ? '1 minute ago' : `${m} minutes ago`
+    const h = Math.floor(m / 60)
+    if (h < 24) return h === 1 ? '1 hour ago' : `${h} hours ago`
+    const d = new Date(dateInput)
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
   }
-
-  // Split lines for line numbers
-  const codeLines = (selectedJob?.sourceCode || '').split('\n')
+  const formatCreated = (dateInput?: string | Date) => {
+    if (!dateInput) return ''
+    const d = new Date(dateInput)
+    return `Created ${d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+  }
+  const statusLabel = (job: JobItem) =>
+    job.status === 'done' ? 'Compiled' : job.status === 'error' ? 'Failed' : 'Building…'
+  const sizeLabel = (job: JobItem) =>
+    job.binSize ? ` · ${(job.binSize / 1024).toFixed(0)}KB` : ''
 
   return (
-    <div className="history-shell bg-white border border-[#e5e5e5] rounded-md overflow-hidden flex flex-col md:flex-row h-[calc(100vh-140px)] min-h-[560px] select-none">
-      {/* ── Left Column: Clean VSCode / Cursor Explorer ──────────────────────── */}
-      <div className="w-full md:w-64 bg-[#fcfcfc] border-r border-[#e5e5e5] flex flex-col shrink-0">
-        {/* Explorer Header */}
-        <div className="h-9 px-3 border-b border-[#e5e5e5] flex items-center justify-between bg-[#f8f8f8]">
-          <span className="text-[11px] font-semibold text-[#555555] uppercase tracking-wider flex items-center gap-1.5">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-            Builds ({jobs.length})
-          </span>
-          <div className="flex items-center gap-1">
-            {jobs.length > 0 && (
-              <button
-                onClick={() => setShowClearModal(true)}
-                className="text-[#888888] hover:text-[#dc2626] p-1 rounded cursor-pointer transition-colors"
-                title="Clear all build history"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 6h18" />
-                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                </svg>
-              </button>
-            )}
+    <div className="bg-white border border-[#e5e5e5] rounded-md overflow-hidden select-none">
+      {/* Header */}
+      <div className="px-4 py-2.5 border-b border-[#e5e5e5] flex items-center justify-between bg-[#f8f8f8]">
+        <span className="text-[12px] font-semibold text-black tracking-tight">
+          Builds ({jobs.length})
+        </span>
+        <div className="flex items-center gap-1">
+          {jobs.length > 0 && (
             <button
-              onClick={fetchJobs}
-              className="text-[#888888] hover:text-black p-1 rounded cursor-pointer transition-colors"
-              title="Refresh history"
+              onClick={() => setShowClearModal(true)}
+              className="text-[#888888] hover:text-[#dc2626] p-1 rounded cursor-pointer transition-colors"
+              title="Clear all build history"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                <path d="M21 21v-5h-5" />
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
               </svg>
             </button>
-          </div>
-        </div>
-
-        {/* Job List */}
-        <div className="flex-1 overflow-y-auto divide-y divide-[#f0f0f0]">
-          {loading && jobs.length === 0 ? (
-            <div className="p-4 text-center text-xs text-[#888888]">Loading builds…</div>
-          ) : jobs.length === 0 ? (
-            <div className="p-4 text-center text-xs text-[#888888]">No builds yet</div>
-          ) : (
-            jobs.map((job) => {
-              const isSelected = selectedJob?.jobId === job.jobId
-              return (
-                <button
-                  key={job.jobId}
-                  onClick={() => setSelectedJobId(job.jobId)}
-                  className={`w-full text-left px-3 py-2 transition-colors cursor-pointer block text-xs ${
-                    isSelected
-                      ? 'bg-[#ebebeb] text-black font-medium'
-                      : 'text-[#555555] hover:bg-[#f3f3f3] hover:text-black'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-0.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          job.status === 'done'
-                            ? 'bg-[#16a34a]'
-                            : job.status === 'error'
-                            ? 'bg-[#dc2626]'
-                            : 'bg-[#f59e0b]'
-                        }`}
-                      />
-                      <span className="font-mono text-[11px] truncate">
-                        {job.phase === 'compile' ? 'main.cpp' : 'flash'}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-[#888888] shrink-0 font-mono">
-                      {formatTime(job.createdAt)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[10px] text-[#888888] font-mono pl-3">
-                    <span>{job.board || 'esp32'}</span>
-                    <span>{formatDate(job.createdAt)}</span>
-                  </div>
-                </button>
-              )
-            })
           )}
+          <button
+            onClick={fetchJobs}
+            className="text-[#888888] hover:text-black p-1 rounded cursor-pointer transition-colors"
+            title="Refresh history"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+              <path d="M21 21v-5h-5" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* ── Right Column: Clean Code Editor & Terminal Pane ──────────────────── */}
-      <div className="flex-1 flex flex-col bg-[#141414] text-[#d4d4d4] overflow-hidden min-w-0">
-        {/* Editor Tab Bar */}
-        <div className="h-9 bg-[#1f1f1f] border-b border-[#2d2d2d] flex items-center justify-between px-2 shrink-0 select-none">
-          {/* File Tabs */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setActiveTab('code')}
-              className={`h-7 px-3 text-xs font-mono rounded-t flex items-center gap-1.5 transition-colors cursor-pointer ${
-                activeTab === 'code'
-                  ? 'bg-[#141414] text-white font-medium border-t-2 border-[#38bdf8]'
-                  : 'text-[#888888] hover:text-white'
-              }`}
-            >
-              <span>main.cpp</span>
-              {selectedJob?.sourceCode && <span className="text-[10px] text-[#38bdf8]">C++</span>}
-            </button>
+      {/* Column headers (list only) */}
+      {!detailId && (
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[#e5e5e5] text-[12px] font-medium text-[#666]">
+          <span className="w-9 shrink-0" aria-hidden="true" />
+          <span className="grow">Name</span>
+          <span className="w-40 shrink-0 text-right hidden sm:block">Updated</span>
+        </div>
+      )}
 
+      {detailId ? (
+        /* ── Build detail page: pick what to open ── */
+        <div>
+          <div className="px-4 py-3 border-b border-[#e5e5e5] flex items-center gap-3">
             <button
-              onClick={() => setActiveTab('binary')}
-              className={`h-7 px-3 text-xs font-mono rounded-t flex items-center gap-1.5 transition-colors cursor-pointer ${
-                activeTab === 'binary'
-                  ? 'bg-[#141414] text-white font-medium border-t-2 border-[#10b981]'
-                  : 'text-[#888888] hover:text-white'
-              }`}
+              onClick={() => { setDetailId(null); setDetail(null); setShowLog(false); setShowCompanion(false) }}
+              className="text-[12px] font-medium text-[#555] hover:text-black cursor-pointer shrink-0"
             >
-              <span>{selectedJob?.filename || 'firmware.bin'}</span>
-              {selectedJob?.binSize && (
-                <span className="text-[10px] text-[#10b981]">
-                  {(selectedJob.binSize / 1024).toFixed(0)}KB
+              ← Builds
+            </button>
+            {detailLoading || !detail ? (
+              <span className="text-[12px] text-[#888]">Loading build…</span>
+            ) : (
+              <>
+                <span
+                  className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-white text-[14px] font-semibold"
+                  style={{ background: tileColor(detail.jobId) }}
+                  aria-hidden="true"
+                >
+                  {((detail.filename || detail.jobId)[0] || 'F').toUpperCase()}
                 </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('log')}
-              className={`h-7 px-3 text-xs font-mono rounded-t flex items-center gap-1.5 transition-colors cursor-pointer ${
-                activeTab === 'log'
-                  ? 'bg-[#141414] text-white font-medium border-t-2 border-[#f59e0b]'
-                  : 'text-[#888888] hover:text-white'
-              }`}
-            >
-              <span>build.log</span>
-            </button>
-
-            {selectedJob?.webCompanion && (
-              <button
-                onClick={() => setActiveTab('companion')}
-                className={`h-7 px-3 text-xs font-mono rounded-t flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  activeTab === 'companion'
-                    ? 'bg-[#141414] text-white font-medium border-t-2 border-[#22c55e]'
-                    : 'text-[#888888] hover:text-white'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#16a34a]" />
-                <span>AI Companion</span>
-              </button>
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium text-black truncate">{detail.filename || detail.jobId}</span>
+                  <span className="block text-[11px] text-[#777]">
+                    {detail.board || 'esp32'}{detail.platform ? ` · ${detail.platform}` : ''} · {statusLabel(detail)}{sizeLabel(detail)}
+                  </span>
+                </span>
+              </>
             )}
           </div>
-
-          {/* Right Action Toolbar */}
-          <div className="flex items-center gap-1.5">
-            {activeTab === 'code' && selectedJob?.sourceCode && (
-              <button
-                onClick={handleCopyCode}
-                className="h-6 px-2 text-[11px] bg-[#2a2a2a] hover:bg-[#333333] text-white rounded transition-colors cursor-pointer flex items-center gap-1 font-mono"
-              >
-                <span>{copied ? '✓ Copied' : 'Copy'}</span>
-              </button>
-            )}
-
-            {selectedJob?.binBase64 && (
-              <button
-                onClick={handleDownloadBin}
-                className="h-6 px-2 text-[11px] bg-[#2a2a2a] hover:bg-[#333333] text-white rounded transition-colors cursor-pointer flex items-center gap-1 font-mono"
-                title="Download .bin"
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {detail && (
+          <div className="divide-y divide-[#f0f0f0]">
+            <button
+              onClick={() => onOpenInCode?.(detail.jobId)}
+              className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+            >
+              <span className="text-[#569cd6] shrink-0" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+              </span>
+              <span className="grow min-w-0">
+                <span className="block text-[13px] font-medium text-black">Code</span>
+                <span className="block text-[11px] text-[#777]">main.cpp - review, edit and approve in the Code tab</span>
+              </span>
+              <span className="text-[#aaa] shrink-0" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </span>
+            </button>
+            <button
+              onClick={() => void downloadBin(detail)}
+              className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+            >
+              <span className="text-[#10b981] shrink-0" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
                 </svg>
-                <span>.bin</span>
-              </button>
-            )}
-
-            {selectedJob?.binBase64 && (
-              <button
-                onClick={handleFlashThisJob}
-                disabled={!connected}
-                className="h-6 px-2.5 text-[11px] bg-white hover:bg-[#f0f0f0] text-black font-semibold rounded transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 font-mono"
-                title={connected ? 'Flash this build to board' : 'Connect board in dashboard to flash'}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              </span>
+              <span className="grow min-w-0">
+                <span className="block text-[13px] font-medium text-black">Binary file</span>
+                <span className="block text-[11px] text-[#777] truncate">{detail.filename || 'firmware.bin'}{detail.binSize ? ` · ${(detail.binSize / 1024).toFixed(0)}KB` : ''}</span>
+              </span>
+              <span className="text-[#aaa] shrink-0" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </span>
+            </button>
+            <button
+              onClick={() => void flashDetail()}
+              disabled={flashing || !detail.binSize}
+              className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[#f5f5f5] transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <span className="text-black shrink-0" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
                 </svg>
-                <span>Flash</span>
+              </span>
+              <span className="grow min-w-0">
+                <span className="block text-[13px] font-medium text-black">{flashing ? 'Flashing…' : 'Flash now'}</span>
+                <span className="block text-[11px] text-[#777]">Write this build straight to the connected board</span>
+              </span>
+              <span className="text-[#aaa] shrink-0" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </span>
+            </button>
+            <button
+              onClick={() => setShowLog((v) => !v)}
+              className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+            >
+              <span className="text-[#f59e0b] shrink-0" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" x2="20" y1="19" y2="19" />
+                </svg>
+              </span>
+              <span className="grow min-w-0">
+                <span className="block text-[13px] font-medium text-black">Build log</span>
+                <span className="block text-[11px] text-[#777]">{showLog ? 'Hide output' : 'Show compiler output'}</span>
+              </span>
+              <span className="text-[#aaa] shrink-0" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showLog ? 'rotate(90deg)' : undefined, transition: 'transform 150ms' }}>
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </span>
+            </button>
+            {showLog && (
+              <div className="px-4 py-3 bg-[#141414] font-mono text-[11px] leading-5 text-[#d4d4d4] overflow-x-auto max-h-72 overflow-y-auto">
+                {(detail.log && detail.log.length > 0 ? detail.log : ['No log output recorded.']).map((line, i) => (
+                  <div key={i} className="whitespace-pre-wrap break-all">{line}</div>
+                ))}
+              </div>
+            )}
+            {detail.webCompanion && (
+              <button
+                onClick={() => setShowCompanion((v) => !v)}
+                className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+              >
+                <span className="text-[#16a34a] shrink-0" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3l1.88 5.76a2 2 0 0 0 1.36 1.36L21 12l-5.76 1.88a2 2 0 0 0-1.36 1.36L12 21l-1.88-5.76a2 2 0 0 0-1.36-1.36L3 12l5.76-1.88a2 2 0 0 0 1.36-1.36L12 3z" />
+                  </svg>
+                </span>
+                <span className="grow min-w-0">
+                  <span className="block text-[13px] font-medium text-black">AI Companion</span>
+                  <span className="block text-[11px] text-[#777]">{showCompanion ? 'Hide preview' : 'Show visualizer preview'}</span>
+                </span>
+                <span className="text-[#aaa] shrink-0" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showCompanion ? 'rotate(90deg)' : undefined, transition: 'transform 150ms' }}>
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </span>
               </button>
             )}
+            {showCompanion && detail.webCompanion && (
+              <div className="p-3">
+                <CompanionPreview
+                  htmlContent={detail.webCompanion}
+                  jobTitle={`Companion: ${detail.filename || 'main.cpp'}`}
+                />
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* Editor Body */}
-        <div className="flex-1 overflow-auto font-mono text-xs select-text">
-          {/* TAB 1: C++ Code with Line Numbers */}
-          {activeTab === 'code' && (
-            selectedJob?.sourceCode ? (
-              <div className="flex min-w-full min-h-full py-2">
-                {/* Gutter / Line Numbers */}
-                <div className="w-10 select-none text-right pr-3 text-[#555555] font-mono text-[11px] leading-relaxed border-r border-[#222222]">
-                  {codeLines.map((_, i) => (
-                    <div key={i}>{i + 1}</div>
-                  ))}
-                </div>
-                {/* Source Code Content */}
-                <div className="flex-1 pl-4 text-[#e0e0e0] font-mono text-[12px] leading-relaxed whitespace-pre">
-                  {selectedJob.sourceCode}
-                </div>
-              </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-[#666666] text-xs">
-                No source code available for this job.
-              </div>
-            )
-          )}
-
-          {/* TAB 2: Binary Info */}
-          {activeTab === 'binary' && (
-            <div className="p-6 max-w-lg space-y-4 font-mono text-xs text-[#cccccc]">
-              <div className="text-sm font-semibold text-white mb-2">
-                Firmware Artifact
-              </div>
-              <div className="bg-[#1e1e1e] border border-[#2a2a2a] p-4 rounded space-y-2.5">
-                <div className="flex justify-between">
-                  <span className="text-[#888888]">File:</span>
-                  <span className="text-white">{selectedJob?.filename || 'firmware.bin'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#888888]">Target Flash Offset:</span>
-                  <span className="text-[#38bdf8]">{selectedJob?.offset || '0x0'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#888888]">Size:</span>
-                  <span className="text-[#10b981]">
-                    {selectedJob?.binSize ? `${selectedJob.binSize} bytes (${(selectedJob.binSize / 1024).toFixed(1)} KB)` : 'N/A'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#888888]">Status:</span>
-                  <span className="capitalize text-white">{selectedJob?.status}</span>
-                </div>
-              </div>
-
-              {selectedJob?.binBase64 && (
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={handleDownloadBin}
-                    className="h-8 px-3 bg-[#2a2a2a] hover:bg-[#333333] text-white rounded transition-colors cursor-pointer flex items-center gap-1.5"
-                  >
-                    Download .bin file
-                  </button>
-                  <button
-                    onClick={handleFlashThisJob}
-                    disabled={!connected}
-                    className="h-8 px-3.5 bg-white hover:bg-[#f0f0f0] text-black font-semibold rounded transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
-                  >
-                    Flash to ESP32
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: Build & Compiler Log */}
-          {activeTab === 'log' && (
-            <div className="p-4 font-mono text-[11px] leading-relaxed text-[#a3a3a3]">
-              {selectedJob?.log && selectedJob.log.length > 0 ? (
-                selectedJob.log.map((line, idx) => (
-                  <div key={idx} className="whitespace-pre-wrap break-all">
-                    {line}
-                  </div>
-                ))
-              ) : (
-                <div className="text-[#666666]">No log output recorded.</div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 4: Live AI Companion Preview */}
-          {activeTab === 'companion' && selectedJob?.webCompanion && (
-            <div className="p-3 h-full">
-              <CompanionPreview
-                htmlContent={selectedJob.webCompanion}
-                jobTitle={`Companion: ${selectedJob.filename || 'main.cpp'}`}
-              />
-            </div>
           )}
         </div>
-
-        {/* Bottom Editor Status Bar */}
-        <div className="h-6 bg-[#0f0f0f] border-t border-[#222222] px-3 flex items-center justify-between text-[10px] font-mono text-[#777777] shrink-0">
-          <div className="flex items-center gap-3">
-            <span>{selectedJob?.board || 'esp32'}</span>
-            <span>•</span>
-            <span className="capitalize">{selectedJob?.status || 'idle'}</span>
+      ) : (
+      <>
+      {/* Full-width build list - a click opens the build page */}
+      <div className="divide-y divide-[#f0f0f0]">
+        {loading && jobs.length === 0 ? (
+          <div className="p-4 text-center text-xs text-[#888888]">Loading builds…</div>
+        ) : loadError && jobs.length === 0 ? (
+          <div className="p-4 text-center text-xs text-[#b45309]">
+            <div>Could not load builds.</div>
+            <button type="button" className="ghost sm mt-2" onClick={() => void fetchJobs()}>Retry</button>
           </div>
-          <div>UTF-8 • C++ / PlatformIO</div>
-        </div>
+        ) : jobs.length === 0 ? (
+          <div className="p-4 text-center text-xs text-[#888888]">No builds yet</div>
+        ) : (
+           jobs.map((job) => {
+             const name = job.filename || job.jobId
+             const letter = (name[0] || 'F').toUpperCase()
+             return (
+               <div
+                 key={job.jobId}
+                 onClick={() => void openDetail(job.jobId)}
+                 role="button"
+                 tabIndex={0}
+                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void openDetail(job.jobId) } }}
+                 title="Open build options"
+                 className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+               >
+                 <span
+                   className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-white text-[15px] font-semibold"
+                   style={{ background: tileColor(job.jobId) }}
+                   aria-hidden="true"
+                 >
+                   {letter}
+                 </span>
+                 <span className="grow min-w-0">
+                   <span className="block text-[13px] font-medium text-black truncate">{name}</span>
+                   <span className="block text-[11px] text-[#777] truncate">
+                     {job.board || 'esp32'}{job.platform ? ` · ${job.platform}` : ''} · {statusLabel(job)}{sizeLabel(job)}
+                   </span>
+                 </span>
+                 <button
+                   type="button"
+                   onClick={async (e) => {
+                     e.stopPropagation()
+                     try {
+                       await navigator.clipboard.writeText(job.jobId)
+                       showAlert('success', 'Job ID copied to clipboard.', 'Copied')
+                     } catch {
+                       showAlert('error', 'Clipboard access was blocked by the browser.', 'Copy Failed')
+                     }
+                   }}
+                   className="shrink-0 text-[#999] hover:text-black p-1 rounded cursor-pointer transition-colors"
+                   title="Copy job ID"
+                 >
+                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                     <rect width="14" height="14" x="9" y="9" rx="2" ry="2" />
+                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                   </svg>
+                 </button>
+                 <span className="w-40 shrink-0 text-right hidden sm:block">
+                   <span className="block text-[12px] text-[#444]">{timeAgo(job.updatedAt ?? job.createdAt)}</span>
+                   <span className="block text-[11px] text-[#999]">{formatCreated(job.createdAt)}</span>
+                 </span>
+               </div>
+             )
+           })
+        )}
       </div>
+      </>
+      )}
 
-      {/* ── Custom Confirmation Modal ────────────────────────────────────────── */}
       {showClearModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-150">
           <div className="bg-white border border-[#e5e5e5] rounded-md p-6 max-w-sm w-full shadow-lg space-y-4">

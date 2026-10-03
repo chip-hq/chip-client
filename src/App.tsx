@@ -7,6 +7,12 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import type { ChangeEvent } from 'react'
 import chipLogo from './assets/ChipLogo.png'
 import { ESPLoader, Transport } from 'esptool-js'
+import {
+  loadPlatforms, findBoard, platformForChip, candidatesForVidPid,
+  type PlatformInfo,
+} from './flashers/platforms'
+import { AVR_BOARDS, probeAvr, flashAvr } from './flashers/stk500v1'
+import { UF2_STEPS, base64ToBytes, downloadUf2, type Uf2Offer } from './flashers/uf2'
 import type { IEspLoaderTerminal } from 'esptool-js'
 import type { User } from 'firebase/auth'
 import { useFirebaseAuth } from './components/useAuth'
@@ -16,7 +22,9 @@ import { BottomConsole } from './components/BottomConsole'
 import { Sidebar, type TabType } from './components/Sidebar'
 import { AlertToast, type AlertItem, type AlertType } from './components/AlertToast'
 import { HistoryView } from './components/HistoryView'
-import { OLEDDesigner } from './components/OLEDDesigner'
+import { AssetBucket } from './components/AssetBucket'
+import { CodeEditor } from './components/CodeEditor'
+import { BatchFlash } from './components/BatchFlash'
 import './App.css'
 
 const WEB_SERIAL_OK = typeof navigator !== 'undefined' && 'serial' in navigator
@@ -46,6 +54,9 @@ interface FlashPayloadMessage {
   jobId?: string
   filename?: string
   offset?: string
+  artifact?: string
+  platform?: string | null
+  board?: string | null
   binBase64: string
   webCompanion?: string
 }
@@ -76,11 +87,21 @@ function formatBytes(b: number): string {
   return `${(b / (1024 * 1024)).toFixed(2)} MB`
 }
 
-function tabFromHash(): TabType {
-  const path = window.location.hash.replace(/^#\/?/, '').split('/')[0]
-  return ['dashboard', 'oled', 'manual', 'history', 'setup'].includes(path)
-    ? path as TabType
-    : 'dashboard'
+function tabFromPath(): TabType {
+  const seg = window.location.pathname.replace(/^\/+/, '').split('/')[0]
+  if (['dashboard', 'code', 'assets', 'manual', 'history', 'setup'].includes(seg)) {
+    return seg as TabType
+  }
+  const legacy = window.location.hash.replace(/^#\/?/, '').split('/')[0]
+  if (['dashboard', 'code', 'assets', 'manual', 'history', 'setup'].includes(legacy)) {
+    return legacy as TabType
+  }
+  return 'dashboard'
+}
+
+function pathForTab(tab: TabType): string {
+  const q = window.location.search || ''
+  return tab === 'dashboard' ? `/${q}` : `/${tab}${q}`
 }
 
 function parseOffset(raw: string): number {
@@ -117,7 +138,7 @@ export default function App() {
     setAlerts((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
-  // Surface auth errors from the external auth system as a toast — an intentional
+  // Surface auth errors from the external auth system as a toast - an intentional
   // notification triggered by an error-state change, not derived render state.
   useEffect(() => {
     if (error) {
@@ -172,7 +193,7 @@ interface SignInScreenProps {
 function SignInScreen({ onSignIn }: SignInScreenProps) {
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-[#f0f0f0] select-none">
-      {/* Left Column — Login Form */}
+      {/* Left Column - Login Form */}
       <div className="w-full lg:w-[460px] p-8 sm:p-12 lg:p-16 flex flex-col justify-between shrink-0 bg-white border-r border-[#e5e5e5]">
         {/* Top Logo */}
         <div>
@@ -234,7 +255,7 @@ function SignInScreen({ onSignIn }: SignInScreenProps) {
         </div>
       </div>
 
-      {/* Right Column — Topographic Emerald Halftone Hero Panel */}
+      {/* Right Column - Topographic Emerald Halftone Hero Panel */}
       <div className="flex-1 p-3 sm:p-4 flex items-stretch">
         <div className="flex-1 bg-[#030a05] border border-[#0d2814] rounded-2xl p-8 sm:p-12 flex flex-col justify-center text-white relative overflow-hidden shadow-2xl">
           {/* Glowing Emerald Ambient Light */}
@@ -280,7 +301,7 @@ function SignInScreen({ onSignIn }: SignInScreenProps) {
             <circle cx="380" cy="420" r="3" fill="#00e676" opacity="0.5" />
           </svg>
 
-          {/* Hero Content — center-left aligned */}
+          {/* Hero Content - center-left aligned */}
           <div className="relative z-10 max-w-xl">
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#00e676]/10 border border-[#00e676]/30 text-[#00e676] text-[11px] font-mono font-medium mb-5">
               <span className="w-1.5 h-1.5 rounded-full bg-[#00e676] animate-pulse" />
@@ -421,6 +442,17 @@ interface FlasherProps {
 
 function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [chip, setChip] = useState<string | null>(null)
+  // Hardware platform of the connected board (Espressif / Arduino / …) -
+  // decides which flashing package handles the port.
+  const [platform, setPlatform] = useState<PlatformInfo | null>(null)
+  const [platforms, setPlatforms] = useState<PlatformInfo[]>([])
+  // '' = auto-detect (probe Espressif first, then Arduino) - the old
+  // one-click behavior. Picking a family only biases the probe order.
+  const [boardSlug, setBoardSlug] = useState<string>(() => {
+    return localStorage.getItem('chip_board_slug') || ''
+  })
+  // Guided UF2 export for Pico (browsers can't write mass-storage drives).
+  const [uf2Offer, setUf2Offer] = useState<(Uf2Offer & { jobId?: string }) | null>(null)
   const [status, setStatus] = useState<Status>('idle')
   const [baud, setBaud] = useState(115200)
   const [file, setFile] = useState<FirmwareFile | null>(null)
@@ -434,7 +466,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     return localStorage.getItem('chip_sidebar_open') !== 'false'
   })
-  const [currentTab, setCurrentTab] = useState<TabType>(tabFromHash)
+  const [currentTab, setCurrentTab] = useState<TabType>(tabFromPath)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [activeConsoleTab, setActiveConsoleTab] = useState<'log' | 'preview'>('log')
   const [activeCompanionHtml, setActiveCompanionHtml] = useState<string | null>(null)
@@ -452,10 +484,33 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     return localStorage.getItem('chip_oled_preview_enabled') === 'true'
   })
   const [recentSerialLine, setRecentSerialLine] = useState<string | null>(null)
+  const [detectedUrl, setDetectedUrl] = useState<string | null>(null)
+
+  const handlePreviewUrl = useCallback((url: string) => {
+    setDetectedUrl(url)
+  }, [])
 
   const handleSelectTab = useCallback((tab: TabType) => {
     setCurrentTab(tab)
-    window.history.pushState({}, '', `#/${tab}`)
+    window.history.pushState({}, '', pathForTab(tab))
+  }, [])
+
+  // History - Code handoff: clicking a build opens it in the Code tab.
+  const [codeOpenJob, setCodeOpenJob] = useState<string | null>(null)
+  const handleOpenInCode = useCallback((jobId: string) => {
+    setCodeOpenJob(jobId)
+    setCurrentTab('code')
+    window.history.pushState({}, '', pathForTab('code'))
+  }, [])
+
+  // Clean up legacy hash URLs once and keep back/forward buttons in sync.
+  useEffect(() => {
+    if (window.location.hash.startsWith('#/')) {
+      window.history.replaceState({}, '', pathForTab(tabFromPath()))
+    }
+    const onPopState = () => setCurrentTab(tabFromPath())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   const handleToggleCompanion = useCallback((enabled: boolean) => {
@@ -532,6 +587,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             type: 'register',
             deviceId: 'default_device',
             chip: chipRef.current ?? 'ESP32',
+            board: boardSlugRef.current || null,
             connected: !!loaderRef.current,
             userId: uid,
             uid,
@@ -557,6 +613,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
   const transportRef = useRef<Transport | null>(null)
   const loaderRef = useRef<ESPLoader | null>(null)
+  // Raw Web Serial port - the AVR/UF2 packages need it without esptool.
+  const portRef = useRef<SerialPort | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const serialDrainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -570,6 +628,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const isCapturingUiRef = useRef<boolean>(false)
 
   const pushLine = useCallback((text: string) => {
+    const urlMatch = text.match(/https?:\/\/[^\s"'<>]+/i)
+    if (urlMatch) setDetectedUrl(urlMatch[0].replace(/[),.;]+$/, ''))
+
     // Check if the board is outputting its baked-in HTML UI over USB Serial
     if (text.includes('===CHIP_UI_START===')) {
       isCapturingUiRef.current = true
@@ -747,6 +808,22 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     []
   )
 
+  // Releases the serial port (esptool transport). Hoisted above the flash
+  // executors - both the esptool and AVR packages call it.
+  const teardown = useCallback(async () => {
+    try {
+      stopSerialDrain()
+      if (transportRef.current) {
+        await transportRef.current.disconnect()
+      }
+    } catch {
+      // ignore
+    } finally {
+      transportRef.current = null
+      loaderRef.current = null
+    }
+  }, [stopSerialDrain])
+
   const executeFlash = useCallback(
     async (fileData: Uint8Array, fileOffset: string, jobId?: string) => {
       if (!transportRef.current) {
@@ -858,17 +935,137 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     [baud, eraseAll, prepareBootloaderSession, pushLine, reportJobStatus, showAlert, startSerialDrain, stopSerialDrain]
   )
 
+  // Arduino AVR flashing package (STK500v1 over the raw Web Serial port).
+  // Used for .hex artifacts - manual picks and Claude relay payloads alike.
+  const executeAvrFlash = useCallback(
+    async (hexText: string, slug: string, jobId?: string) => {
+      const port = portRef.current
+      if (!port) {
+        const msg = 'Board is not connected. Connect via Web Serial first.'
+        showAlert('error', msg, 'Board Not Connected')
+        pushLine(`[AVR ERROR] ${msg}`)
+        if (jobId) reportJobStatus(jobId, 'error', undefined, msg)
+        return
+      }
+      // esptool must not hold the port while STK500 talks.
+      await teardown()
+      setStatus('flashing')
+      setProgress(0)
+      if (jobId) {
+        setActiveJob({ jobId, phase: 'flash', status: 'started', progress: 0, log: [] })
+        reportJobStatus(jobId, 'started', 0)
+      }
+      pushLine(`[AVR] Flashing ${slug} via STK500v1…`)
+      try {
+        await flashAvr(
+          port,
+          hexText,
+          slug,
+          (written, total) => {
+            const pct = Math.round((written / total) * 100)
+            setProgress(pct)
+            if (jobId) reportJobStatus(jobId, 'uploading', pct)
+          },
+          (line) => pushLine(line),
+        )
+        setProgress(100)
+        setStatus('connected')
+        pushLine('[AVR] Success! Board rebooted into the new sketch.')
+        showAlert('success', 'Arduino flashed successfully!', 'Flash Complete')
+        if (jobId) {
+          reportJobStatus(jobId, 'done', 100)
+          setActiveJob((prev) => (prev ? { ...prev, status: 'done', progress: 100 } : null))
+          setTimeout(() => setActiveJob(null), 8000)
+        }
+        setTimeout(() => setStatus('connected'), 3000)
+      } catch (e) {
+        const msg = errMessage(e)
+        setStatus('error')
+        pushLine(`[AVR ERROR] ${msg}`)
+        showAlert('error', msg, 'Flash Failed')
+        if (jobId) {
+          reportJobStatus(jobId, 'error', undefined, msg)
+          setActiveJob((prev) => (prev ? { ...prev, status: 'error' } : null))
+        }
+      }
+    },
+    [pushLine, reportJobStatus, showAlert, teardown]
+  )
+
+  // Direct flash of a history build file - routes to the right flashing
+  // package by artifact, same as manual picks and Claude relay payloads.
+  const handleHistoryFlash = useCallback(
+    (file: { name: string; board?: string; artifact?: string; offset?: string; data: Uint8Array }) => {
+      const art = file.artifact
+        ?? (file.name.toLowerCase().endsWith('.hex') ? 'hex'
+          : file.name.toLowerCase().endsWith('.uf2') ? 'uf2' : 'bin')
+      if (art === 'hex') {
+        const text = new TextDecoder().decode(file.data)
+        const slug = file.board && AVR_BOARDS[file.board] ? file.board : 'uno'
+        showAlert('info', `Flashing ${file.name} via STK500…`, 'Flash Started')
+        void executeAvrFlash(text, slug)
+      } else if (art === 'uf2') {
+        setUf2Offer({ filename: file.name, size: file.data.byteLength, data: file.data })
+        showAlert('info', 'UF2 loaded - follow the BOOTSEL steps below.', 'UF2 Ready')
+      } else {
+        executeFlash(file.data, file.offset ?? '0x0')
+        showAlert('info', `Flashing ${file.name} to board...`, 'Flash Started')
+      }
+    },
+    [executeFlash, executeAvrFlash, showAlert]
+  )
+
+  // Direct Flash from the Code tab: fetch the selected compiled artifact and
+  // reuse the same USB/artifact router as Job History.
+  const handleDirectFlash = useCallback(async (jobId: string) => {
+    try {
+      const [detailRes, binaryRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/jobs/${encodeURIComponent(jobId)}?full=1`),
+        fetch(`${BACKEND_URL}/api/jobs/${encodeURIComponent(jobId)}/download`),
+      ])
+      if (!detailRes.ok || !binaryRes.ok) throw new Error('No compiled binary available for this job')
+      const detail = await detailRes.json()
+      const data = new Uint8Array(await binaryRes.arrayBuffer())
+      handleHistoryFlash({
+        name: detail.filename || `${jobId}.bin`,
+        board: detail.board,
+        artifact: detail.artifact,
+        offset: detail.offset,
+        data,
+      })
+    } catch (e) {
+      showAlert('error', e instanceof Error ? e.message : String(e), 'Direct Flash Failed')
+    }
+  }, [handleHistoryFlash, showAlert])
+
   // Latest-value refs so the once-subscribed WebSocket handlers avoid re-subscribing;
   // synced after commit, read only inside async socket handlers.
   const executeFlashRef = useRef(executeFlash)
+  const executeAvrFlashRef = useRef(executeAvrFlash)
+  const reportJobStatusRef = useRef(reportJobStatus)
   const offsetRef = useRef(offset)
   const chipRef = useRef(chip)
+  const boardSlugRef = useRef(boardSlug)
   useEffect(() => {
     executeFlashRef.current = executeFlash
+    executeAvrFlashRef.current = executeAvrFlash
+    reportJobStatusRef.current = reportJobStatus
     offsetRef.current = offset
     // eslint-disable-next-line react-hooks/immutability -- latest-ref sync; false positive (chip is in another effect's deps)
     chipRef.current = chip
+    boardSlugRef.current = boardSlug
   })
+
+  // Hardware platform registry (backend mirror, bundled fallback offline).
+  useEffect(() => {
+    let cancelled = false
+    void loadPlatforms(BACKEND_URL).then((list) => {
+      if (!cancelled) setPlatforms(list)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let ws: WebSocket | null = null
@@ -903,13 +1100,14 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
               type: 'register',
               deviceId: 'default_device',
               chip: chipRef.current ?? 'ESP32',
+              board: boardSlugRef.current || null,
               connected: !!loaderRef.current,
               userId: uid,
               uid,
               email,
             })
           )
-          // Keepalive — Railway drops idle sockets ~60s without traffic
+          // Keepalive - Railway drops idle sockets ~60s without traffic
           if (heartbeatInterval) clearInterval(heartbeatInterval)
           heartbeatInterval = setInterval(() => {
             if (ws?.readyState === WebSocket.OPEN) {
@@ -937,12 +1135,26 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             }
 
             if (msg.type === 'flash_payload') {
-              const { jobId, filename, offset: payloadOffset, binBase64, webCompanion: flashWebCompanion } = msg as FlashPayloadMessage
+              const { jobId, filename, offset: payloadOffset, artifact, board: payloadBoard, binBase64, webCompanion: flashWebCompanion } = msg as FlashPayloadMessage
               const fname = filename ?? 'firmware.bin'
-              pushLine(`[FLASH] Received firmware from Claude (${fname}).`)
-              showAlert('info', `Received firmware from Claude (${fname}). Starting flash...`, 'Claude Agent Flash')
-              const bytes = base64ToUint8(binBase64)
-              await executeFlashRef.current(bytes, payloadOffset ?? offsetRef.current, jobId)
+              pushLine(`[FLASH] Received firmware from Claude (${fname}${artifact ? ` · ${artifact}` : ''}).`)
+
+              // Route to the right flashing package by artifact kind.
+              if (artifact === 'hex') {
+                const text = new TextDecoder().decode(base64ToUint8(binBase64))
+                const slug = payloadBoard && AVR_BOARDS[payloadBoard] ? payloadBoard : 'uno'
+                showAlert('info', `Received Arduino firmware (${fname}). Flashing via STK500…`, 'Claude Agent Flash')
+                await executeAvrFlashRef.current(text, slug, jobId)
+              } else if (artifact === 'uf2') {
+                const bytes = base64ToBytes(binBase64)
+                setUf2Offer({ filename: fname, size: bytes.byteLength, data: bytes, jobId })
+                if (jobId) reportJobStatusRef.current(jobId, 'started', 5)
+                showAlert('info', `Pico firmware received (${fname}). Follow the UF2 steps below - browsers can't write the BOOTSEL drive directly.`, 'Claude Agent Flash')
+              } else {
+                showAlert('info', `Received firmware from Claude (${fname}). Starting flash...`, 'Claude Agent Flash')
+                const bytes = base64ToUint8(binBase64)
+                await executeFlashRef.current(bytes, payloadOffset ?? offsetRef.current, jobId)
+              }
               // Load companion HTML immediately from flash payload
               if (flashWebCompanion) {
                 setActiveCompanionHtml(flashWebCompanion)
@@ -997,20 +1209,6 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     }
   }, [uid, email, pushLine, startJobPoll, showAlert])
 
-  const teardown = useCallback(async () => {
-    try {
-      stopSerialDrain()
-      if (transportRef.current) {
-        await transportRef.current.disconnect()
-      }
-    } catch {
-      // ignore
-    } finally {
-      transportRef.current = null
-      loaderRef.current = null
-    }
-  }, [stopSerialDrain])
-
   const connect = useCallback(async () => {
     if (!WEB_SERIAL_OK) return
     setStatus('connecting')
@@ -1018,38 +1216,97 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
 
     try {
       const port = await navigator.serial.requestPort({})
-      const transport = new Transport(port)
-      transportRef.current = transport
+      portRef.current = port
+      const list = await loadPlatforms(BACKEND_URL)
+      setPlatforms(list)
 
-      const loader = new ESPLoader({
-        transport,
-        baudrate: baud,
-        terminal,
-      })
+      // USB VID/PID narrows the field (genuine Arduino IDs are decisive;
+      // shared bridge chips only hint - the bootloader probe decides).
+      const info = port.getInfo() as { usbVendorId?: number; usbProductId?: number }
+      const candidates = candidatesForVidPid(info.usbVendorId, info.usbProductId)
+      if (candidates.length > 0) {
+        pushLine(`[DETECT] USB ${info.usbVendorId?.toString(16)}:${info.usbProductId?.toString(16)} hints: ${candidates.join(', ')}`)
+      }
 
-      pushLine('Syncing with ESP32…')
-      const detected = await loader.main()
-      // Set only after sync succeeds so the WS `register` reports "connected" at the right time.
-      // eslint-disable-next-line react-hooks/immutability -- valid async ref write; false positive across await
-      loaderRef.current = loader
+      const picked = findBoard(list, boardSlugRef.current)
+      const avrFirst = candidates.includes('arduino-avr') || picked?.platform.id === 'arduino-avr'
 
-      setChip(detected)
-      setStatus('connected')
-      pushLine(`Connected: ${detected}`)
-      showAlert('success', `ESP32 connected successfully (${detected})`, 'Board Connected')
+      const registerBoard = (detectedChip: string, plat: PlatformInfo | null) => {
+        setChip(detectedChip)
+        setPlatform(plat)
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'register',
+              deviceId: 'default_device',
+              chip: detectedChip,
+              board: boardSlugRef.current || null,
+              connected: true,
+              userId: uid,
+              uid,
+              email,
+            })
+          )
+        }
+      }
 
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'register',
-            deviceId: 'default_device',
-            chip: detected,
-            connected: true,
-            userId: uid,
-            uid,
-            email,
-          })
-        )
+      const tryEsptool = async (): Promise<boolean> => {
+        const transport = new Transport(port)
+        transportRef.current = transport
+        const loader = new ESPLoader({ transport, baudrate: baud, terminal })
+        pushLine('Syncing with Espressif bootloader (esptool)…')
+        try {
+          const detected = await loader.main()
+          // eslint-disable-next-line react-hooks/immutability -- valid async ref write; false positive across await
+          loaderRef.current = loader
+          const plat = platformForChip(list, detected) ?? list.find((p) => p.id === 'esp32') ?? null
+          registerBoard(detected, plat)
+          setStatus('connected')
+          pushLine(`Connected: ${detected} · ${plat ? `${plat.vendor} ${plat.label}` : 'unknown platform'}`)
+          showAlert('success', `${detected} connected (${plat ? `${plat.vendor} ${plat.label}` : 'Espressif'})`, 'Board Connected')
+          return true
+        } catch {
+          await teardown()
+          return false
+        }
+      }
+
+      const tryAvr = async (): Promise<boolean> => {
+        // Prefer the picked board's baud, then the other optiboot rate.
+        const pickedBaud = picked?.platform.id === 'arduino-avr' ? picked.board.baud ?? 115200 : 115200
+        const bauds = pickedBaud === 115200 ? [115200, 57600] : [57600, 115200]
+        for (const b of bauds) {
+          pushLine(`Probing Arduino bootloader (STK500v1 @ ${b})…`)
+          if (await probeAvr(port, b)) {
+            const plat = list.find((p) => p.id === 'arduino-avr') ?? null
+            const slug = plat?.boards.find((x) => x.baud === b)?.slug ?? 'uno'
+            setBoardSlug(slug)
+            localStorage.setItem('chip_board_slug', slug)
+            registerBoard('ATmega328P', plat)
+            setStatus('connected')
+            pushLine(`Connected: ATmega328P · Arduino ${slug}`)
+            showAlert('success', `Arduino ${slug} connected (ATmega328P)`, 'Board Connected')
+            return true
+          }
+        }
+        return false
+      }
+
+      let ok = false
+      if (avrFirst) {
+        ok = await tryAvr()
+        if (!ok) ok = await tryEsptool()
+      } else {
+        ok = await tryEsptool()
+        if (!ok) ok = await tryAvr()
+      }
+
+      if (!ok) {
+        const msg = 'No recognised bootloader answered (tried Espressif esptool + Arduino STK500v1). Check the cable and board selection.'
+        showAlert('error', msg, 'Connection Failed')
+        pushLine(`Error: ${msg}`)
+        setStatus('idle')
+        await teardown()
       }
     } catch (e) {
       const msg = errMessage(e)
@@ -1067,6 +1324,9 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   const disconnect = useCallback(async (isUnplugged = false) => {
     await teardown()
     setChip(null)
+    setPlatform(null)
+    setUf2Offer(null)
+    portRef.current = null
     setProgress(0)
     setStatus('idle')
     setActiveCompanionHtml(null)
@@ -1089,10 +1349,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
     }
 
     if (isUnplugged) {
-      pushLine('[SERIAL] USB cable unplugged — device disconnected.')
-      showAlert('error', 'ESP32 was unplugged from USB.', 'Board Disconnected')
+        pushLine('[SERIAL] USB cable unplugged - device disconnected.')
+        showAlert('error', 'Board was unplugged from USB.', 'Board Disconnected')
     } else {
-      showAlert('info', 'ESP32 board disconnected.', 'Board Disconnected')
+      showAlert('info', 'Board disconnected.', 'Board Disconnected')
     }
   }, [teardown, showAlert, uid, email, pushLine])
 
@@ -1193,31 +1453,24 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
   }, [showAlert])
 
   const handleManualFlash = useCallback(() => {
-    if (file?.data) {
-      executeFlash(file.data, offset)
+    if (!file?.data) return
+    const name = file.name.toLowerCase()
+    if (name.endsWith('.hex')) {
+      const text = new TextDecoder().decode(file.data)
+      const slug = boardSlugRef.current && AVR_BOARDS[boardSlugRef.current] ? boardSlugRef.current : 'uno'
+      executeAvrFlash(text, slug)
+      return
     }
-  }, [executeFlash, file, offset])
-
-  const handleFlashBinaryDirect = useCallback(
-    async (binBase64: string, flashOffset: string, filename: string) => {
-      try {
-        const byteCharacters = atob(binBase64)
-        const byteNumbers = new Array(byteCharacters.length)
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i)
-        }
-        const data = new Uint8Array(byteNumbers)
-        executeFlash(data, flashOffset, `reflash_${Date.now()}`)
-        showAlert('info', `Flashing ${filename} to board at ${flashOffset}...`, 'Flash Started')
-      } catch (err) {
-        showAlert('error', `Failed to prepare binary for flashing: ${String(err)}`, 'Flash Error')
-      }
-    },
-    [executeFlash, showAlert]
-  )
+    if (name.endsWith('.uf2')) {
+      setUf2Offer({ filename: file.name, size: file.size, data: file.data })
+      showAlert('info', 'UF2 loaded - follow the BOOTSEL steps below.', 'UF2 Ready')
+      return
+    }
+    executeFlash(file.data, offset)
+  }, [executeFlash, executeAvrFlash, file, offset, showAlert])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f5f5f5] select-none">
+    <div className="flex h-screen overflow-hidden bg-[#f5f5f5]">
       {/* Sidebar Component */}
       <Sidebar
         user={user}
@@ -1247,6 +1500,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         onToggleOledPreview={handleToggleOledPreview}
         backendUrl={BACKEND_URL}
         authToken={null}
+        userId={user.uid}
       />
 
 
@@ -1276,8 +1530,10 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             <span className="text-xs font-semibold text-black tracking-tight capitalize">
               {currentTab === 'history'
                 ? 'Job History'
-                : currentTab === 'oled'
-                ? 'OLED Designer'
+                : currentTab === 'assets'
+                ? 'Assets'
+                : currentTab === 'code'
+                ? 'Code'
                 : currentTab === 'manual'
                 ? 'Manual Flash'
                 : currentTab === 'setup'
@@ -1316,12 +1572,20 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
         </header>
 
         {/* Scrollable Body + Agent Sidebar */}
-        <div className="flex flex-1 overflow-hidden">
-          <main className={`flex-1 ${currentTab === 'oled' ? 'overflow-hidden' : 'overflow-y-auto'} p-4 md:p-8 bg-[#f5f5f5]`}>
-          <div className={`mx-auto ${currentTab === 'oled' ? 'h-full max-w-none' : 'max-w-5xl space-y-4 pb-6'}`}>
-            {currentTab === 'oled' && <div className="-mx-4 -mt-4 h-[calc(100vh-3rem)] md:-mx-8 md:-mt-8 overflow-hidden"><OLEDDesigner /></div>}
+        <div className="flex flex-1 overflow-hidden min-h-0">
+          {/* Full-page IDE: owns all of main, no page padding or width cap,
+             so collapsing the app sidebar gives the space to the editor.
+             Keep mounted when hidden so switching tabs doesn't wipe
+             editor state and refetch everything. */}
+          <main className="flex-1 overflow-hidden bg-[#f5f5f5] min-w-0" style={{ display: currentTab === 'code' ? '' : 'none' }}>
+            <div className="h-full overflow-hidden">
+              <CodeEditor backendUrl={BACKEND_URL} userId={user.uid} showAlert={showAlert} onDirectFlash={handleDirectFlash} refreshKey={refreshKey} openJobId={codeOpenJob} />
+            </div>
+          </main>
+          <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#f5f5f5]" style={{ display: currentTab === 'code' ? 'none' : '' }}>
+          <div className="mx-auto max-w-5xl space-y-4 pb-6">
             {/* TAB 1: MAIN AUTOMATED AGENT DASHBOARD */}
-            {currentTab === 'dashboard' && (
+            <div className="space-y-4" style={{ display: currentTab === 'dashboard' ? '' : 'none' }}>
               <>
                 {/* Live Status Panel */}
                 <StatusPanel
@@ -1338,13 +1602,34 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                   <div className="step">
                     <div className="grow">
                       <h2>Connect your board</h2>
-                      <p className="sub">Plug the ESP32 in over USB, then grant the port to connect with Claude.</p>
+                      <p className="sub">Plug the board in over USB, then grant the port - auto-detect finds its family, or pick one to speed it up.</p>
                     </div>
                     <span className={`pill ${connected ? 'on' : ''}`}>
-                      {connected ? `● ${chip ?? 'connected'}` : '○ not connected'}
+                      {connected
+                        ? `● ${chip ?? 'connected'}${platform ? ` · ${platform.vendor} ${platform.label}` : ''}`
+                        : '○ not connected'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 mt-4">
+                  <div className="flex items-center gap-2 mt-4 flex-wrap">
+                    <select
+                      value={boardSlug}
+                      onChange={(e) => {
+                        setBoardSlug(e.target.value)
+                        localStorage.setItem('chip_board_slug', e.target.value)
+                      }}
+                      disabled={connected || busy}
+                      className="h-8 px-2 bg-white border border-[#d1d5db] rounded text-xs text-black outline-none disabled:opacity-40"
+                      title="Board family hint - auto-detect probes each flashing package until the board answers"
+                    >
+                      <option value="">Auto-detect (recommended)</option>
+                      {platforms.filter((p) => p.status === 'supported').map((p) => (
+                        <optgroup key={p.id} label={`${p.vendor} ${p.label}`}>
+                          {p.boards.map((b) => (
+                            <option key={b.slug} value={b.slug}>{b.label}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
                     <BaudDropdown
                       value={baud}
                       onChange={setBaud}
@@ -1357,7 +1642,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                         onClick={connect}
                         disabled={busy}
                       >
-                        {status === 'connecting' ? 'Connecting…' : 'Connect board'}
+                        {status === 'connecting' ? 'Detecting…' : 'Connect board'}
                       </button>
                     ) : (
                       <div className="flex gap-2">
@@ -1368,37 +1653,115 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                         >
                           Disconnect
                         </button>
-                        <button
-                          className="h-8 px-3 bg-white hover:bg-[#fef2f2] border border-[#fecaca] text-[#dc2626] text-xs font-medium rounded transition-colors disabled:opacity-40 cursor-pointer"
-                          onClick={() => eraseChip()}
-                          disabled={busy}
-                          title="Completely wipe all flash memory on this ESP32"
-                        >
-                          Erase flash
-                        </button>
+                        {platform?.id !== 'arduino-avr' && (
+                          <button
+                            className="h-8 px-3 bg-white hover:bg-[#fef2f2] border border-[#fecaca] text-[#dc2626] text-xs font-medium rounded transition-colors disabled:opacity-40 cursor-pointer"
+                            onClick={() => eraseChip()}
+                            disabled={busy}
+                            title="Completely wipe all flash memory on this board (Espressif only)"
+                          >
+                            Erase flash
+                          </button>
+                        )}
                       </div>
+                    )}
+                  </div>
+                  {platform?.flash && (
+                    <p className="hint">
+                      Flashing via <b>{platform.flash.tool}</b> ({platform.flash.package}) - {platform.flash.protocol}.
+                    </p>
+                  )}
+                </section>
+
+                {/* UF2 guided export (Pico): browsers can't write BOOTSEL drives */}
+                {uf2Offer && (
+                  <section className="card" style={{ borderColor: '#f59e0b' }}>
+                    <div className="step">
+                      <div className="grow">
+                        <h2>Pico update ready - 3 steps</h2>
+                        <p className="sub">{uf2Offer.filename} ({formatBytes(uf2Offer.size)}) compiled for Raspberry Pi Pico.</p>
+                      </div>
+                      <span className="pill">RP2040 · UF2</span>
+                    </div>
+                    <ol className="text-[12px] text-[#444] mt-2 space-y-1 list-decimal ml-4">
+                      {UF2_STEPS.map((s, i) => <li key={i}>{s}</li>)}
+                    </ol>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        type="button"
+                        className="h-8 px-4 bg-black hover:bg-[#222222] text-white text-xs font-medium rounded transition-colors cursor-pointer"
+                        onClick={() => {
+                          downloadUf2(uf2Offer)
+                          showAlert('info', 'UF2 saved - drop it onto the RPI-RP2 drive.', 'UF2 Exported')
+                        }}
+                      >
+                        Save .uf2
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost sm"
+                        onClick={() => {
+                          if (uf2Offer.jobId) reportJobStatus(uf2Offer.jobId, 'done', 100)
+                          pushLine('[UF2] Marked complete by user.')
+                          setUf2Offer(null)
+                        }}
+                      >
+                        Done - Pico rebooted
+                      </button>
+                      <button type="button" className="ghost sm" onClick={() => setUf2Offer(null)}>
+                        Dismiss
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                {/* Hardware platforms */}
+                <section className="card">
+                  <div className="step">
+                    <div className="grow">
+                      <h2>Platforms</h2>
+                      <p className="sub">Each chip family flashes with its own package - ESP32 uses esptool, Arduino uses STK500, Pico uses UF2.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 mt-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+                    {platforms.filter((p) => p.status === 'supported').map((p) => (
+                      <div
+                        key={p.id}
+                        className="border rounded p-2.5 bg-white"
+                        style={{ borderColor: platform?.id === p.id ? '#000' : '#e5e5e5' }}
+                      >
+                        <div className="text-[12px] font-semibold text-black">{p.vendor} · {p.label}</div>
+                        <div className="text-[11px] text-[#888] font-mono">{p.boardCount} boards</div>
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <span className="pill" style={{ color: '#16a34a', borderColor: '#86efac', background: '#f0fdf4' }}>● supported</span>
+                          {p.flash && <span className="text-[10px] font-mono text-[#666]">{p.flash.tool}</span>}
+                        </div>
+                      </div>
+                    ))}
+                    {platforms.length === 0 && (
+                      <p className="hint">Loading platform registry...</p>
                     )}
                   </div>
                 </section>
               </>
-            )}
+            </div>
 
             {/* TAB 2: MANUAL FLASH TOOL */}
-            {currentTab === 'manual' && (
+            <div className="space-y-4" style={{ display: currentTab === 'manual' ? '' : 'none' }}>
               <>
                 {/* Choose Firmware */}
                 <section className="card">
                   <div className="step">
                     <div className="grow">
                       <h2>Choose firmware</h2>
-                      <p className="sub">Select a compiled .bin file from your computer.</p>
+                      <p className="sub">Select a compiled file: .bin for Espressif, .hex for Arduino AVR, .uf2 for Pico.</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 mt-4">
-                    <label className="relative overflow-hidden inline-flex items-center h-8 px-3 bg-white hover:bg-[#fafafa] border border-[#d1d5db] hover:border-black text-xs font-medium text-black rounded transition-all cursor-pointer">
-                      <span>{file ? 'Change .bin' : 'Choose .bin'}</span>
-                      <input type="file" accept=".bin" onChange={onPickFile} disabled={busy} className="absolute inset-0 opacity-0 cursor-pointer" />
-                    </label>
+                      <label className="relative overflow-hidden inline-flex items-center h-8 px-3 bg-white hover:bg-[#fafafa] border border-[#d1d5db] hover:border-black text-xs font-medium text-black rounded transition-all cursor-pointer">
+                        <span>{file ? 'Change file' : 'Choose .bin / .hex / .uf2'}</span>
+                        <input type="file" accept=".bin,.hex,.uf2" onChange={onPickFile} disabled={busy} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      </label>
                     <input
                       className="h-8 px-2.5 w-28 bg-white border border-[#d1d5db] focus:border-black rounded text-xs font-mono text-black outline-none transition-colors"
                       value={offset}
@@ -1422,7 +1785,7 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                   <div className="step">
                     <div className="grow">
                       <h2>Flash it</h2>
-                      <p className="sub">Writes to the board over USB with esptool-js.</p>
+                      <p className="sub">Writes to the board over USB - esptool for Espressif, STK500 for Arduino, UF2 steps for Pico.</p>
                     </div>
                     <label className="check">
                       <input
@@ -1451,23 +1814,41 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                   {status === 'flashing' && <FlashProgressBar progress={progress} />}
                   {status === 'done' && <p className="ok">✓ Flash complete!</p>}
                 </section>
+
+                {/* Batch flash: many boards, one binary, all at once */}
+                <section className="card">
+                  <div className="step">
+                    <div className="grow">
+                      <h2>Batch flash</h2>
+                      <p className="sub">Grant one USB port per Espressif board, then flash them all concurrently (esptool package).</p>
+                    </div>
+                  </div>
+                  <BatchFlash baud={baud} file={file} offset={offset} eraseAll={eraseAll} showAlert={showAlert} />
+                </section>
               </>
-            )}
+            </div>
+
+            {/* TAB: CODE renders above, owning all of main (no width cap) */}
+
+            <div style={{ display: currentTab === 'assets' ? '' : 'none' }}>
+              <AssetBucket />
+            </div>
 
             {/* TAB 3: JOB HISTORY & ARTIFACTS */}
-            {currentTab === 'history' && (
+            <div style={{ display: currentTab === 'history' ? '' : 'none' }}>
               <HistoryView
                 backendUrl={BACKEND_URL}
-                connected={connected}
+                userId={user.uid}
                 refreshKey={refreshKey}
-                onFlashBinary={handleFlashBinaryDirect}
+                onOpenInCode={handleOpenInCode}
+                onFlashFile={handleHistoryFlash}
                 showAlert={showAlert}
               />
-            )}
+            </div>
 
-            {/* TAB 4: SETUP — AI Agent Connection Flow */}
-            {currentTab === 'setup' && (
-              <div className="space-y-4 max-w-2xl select-none">
+            {/* TAB 4: SETUP - AI Agent Connection Flow */}
+            <div style={{ display: currentTab === 'setup' ? '' : 'none' }}>
+              <div className="space-y-4 max-w-2xl">
                 {/* Header */}
                 <div>
                   <h1 className="text-sm font-semibold text-black tracking-tight">Connect your AI agent</h1>
@@ -1672,13 +2053,13 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                       <div className="pb-5 min-w-0">
                         <p className="text-[13px] font-semibold text-black leading-tight mb-1">Approve the connection</p>
                         <p className="text-[12px] text-[#666666] leading-relaxed">
-                          Your agent will open a login prompt. Sign in with the same account you used here — this links your agent session to your board.
+                          Your agent will open a login prompt. Sign in with the same account you used here - this links your agent session to your board.
                         </p>
                         <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-[#888888]">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                           </svg>
-                          OAuth 2.1 with PKCE — your credentials are never shared with the agent.
+                          OAuth 2.1 with PKCE - your credentials are never shared with the agent.
                         </div>
                       </div>
                     </div>
@@ -1705,15 +2086,15 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
                   </div>
                 )}
               </div>
-            )}
+            </div>
 
           </div>
           </main>
 
         </div>
 
-        {/* Bottom-docked Log Console (Dashboard & Manual tabs) */}
-        {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'oled' && (
+        {/* Bottom-docked Log Console (not on full-page tabs: history, setup, code) */}
+        {currentTab !== 'history' && currentTab !== 'setup' && currentTab !== 'code' && (
           <BottomConsole
             log={log}
             onClearLog={() => setLog([])}
@@ -1722,6 +2103,8 @@ function Flasher({ user, onSignOut, showAlert }: FlasherProps) {
             companionHtml={activeCompanionHtml}
             companionTitle={activeCompanionTitle}
             recentSerialLine={recentSerialLine}
+            detectedUrl={detectedUrl}
+            onPreviewUrl={handlePreviewUrl}
             oledPreviewEnabled={oledPreviewEnabled}
           />
         )}
